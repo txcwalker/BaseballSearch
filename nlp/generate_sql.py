@@ -27,23 +27,20 @@ def build_prompt(nl_query, schema_str, prompt_template):
     return prompt_template.format(schema=schema_str.strip(), query=nl_query.strip())
 
 def load_openai_key():
-    # First, try loading from .env.openai file
+
+    if "OPENAI_API_KEY" in os.environ:
+        return os.environ["OPENAI_API_KEY"]
+
     env_path = os.path.join(os.path.dirname(__file__), "..", ".env.openai")
     if os.path.exists(env_path):
         load_dotenv(env_path)
 
-    # Check if the environment variable is set
-    key_env = os.getenv("OPENAI_API_KEY")
-    if key_env:
-        return key_env
+    if "OPENAI_API_KEY" in os.environ:
+        return os.environ["OPENAI_API_KEY"]
 
-    # Fallback: check local secrets file
-    key_path = os.path.join(os.path.dirname(__file__), "secrets", "openai_key.txt")
-    if os.path.exists(key_path):
-        with open(key_path, "r") as f:
-            return f.read().strip()
 
-    raise ValueError("OpenAI API key not found in `.env.openai`, environment, or secrets/openai_key.txt")
+    raise ValueError("OpenAI API key not found in environment, .env.openai, or secrets file.")
+
 
 
 
