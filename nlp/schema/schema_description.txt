@@ -1,0 +1,102 @@
+Your PostgreSQL database contains the following tables:
+
+1. people(playerid, birthyear, birthmonth, birthday, birthcountry, birthstate, birthcity,
+   deathyear, deathmonth, deathday, deathcountry, deathstate, deathcity,
+   namefirst, namelast, namegiven, weight, height, bats, throws,
+   debut, finalgame, retroid, bbrefid)
+
+2. teamsfranchises(franchid, franchname, active, naassoc)
+
+3. teams(yearid, lgid, teamid, franchid, divid, rank, g, ghome, w, l, divwin, wcwin,
+   lgwin, wswin, r, ab, h, doubles, triples, hr, bb, so, sb, cs, hbp, sf, ra, er, era,
+   cg, sho, sv, ipouts, ha, hra, bba, soa, e, dp, fp, name, park, attendance,
+   bpf, ppf, teamidbr, teamidlahman45, teamidretro)
+
+4. parks(parkkey, parkname, parkalias, city, state, country)
+
+5. batting(playerid, yearid, stint, teamid, lgid, g, ab, r, h, doubles, triples, hr, rbi,
+   sb, cs, bb, so, ibb, hbp, sh, sf, gidp)
+
+6. pitching(playerid, yearid, stint, teamid, lgid, w, l, g, gs, cg, sho, sv, ipouts, h,
+   er, hr, bb, so, baopp, era, ibb, wp, hbp, bk, bfp, gf, r, sh, sf, gidp)
+
+7. fielding(playerid, yearid, stint, teamid, lgid, pos, g, gs, innouts, po, a, e, dp,
+   pb, wp, sb, cs, zr)
+
+8. fieldingof(playerid, yearid, stint, glf, gcf, grf)
+
+9. fieldingofsplit(playerid, yearid, stint, teamid, lgid, pos, g, gs, innouts, po, a, e,
+   dp, pb, wp, sb, cs, zr)
+
+10. appearances(yearid, teamid, lgid, playerid, g_all, gs, g_batting, g_defense,
+    g_p, g_c, g_1b, g_2b, g_3b, g_ss, g_lf, g_cf, g_rf, g_of, g_dh, g_ph, g_pr)
+
+11. managers(playerid, yearid, teamid, lgid, inseason, g, w, l, rank, plyrmgr)
+
+12. allstarfull(playerid, yearid, gamenum, gameid, teamid, lgid, gp, startingpos)
+
+13. battingpost(yearid, round, playerid, teamid, lgid, g, ab, r, h, doubles, triples, hr,
+    rbi, sb, cs, bb, so, ibb, hbp, sh, sf, gidp)
+
+14. pitchingpost(playerid, yearid, round, teamid, lgid, w, l, g, gs, cg, sho, sv,
+    ipouts, h, er, hr, bb, so, baopp, era, ibb, wp, hbp, bk, bfp, gf, r, sh,
+    sf, gidp)
+
+15. fieldingpost(playerid, yearid, teamid, lgid, round, pos, g, gs, innouts, po, a, e,
+    dp, tp, pb, sb, cs)
+
+16. seriespost(yearid, round, teamidwinner, lgidwinner, teamidloser, lgidloser,
+    wins, losses, ties)
+
+17. homegames(yearkey, leaguekey, teamkey, parkkey, spanfirst, spanlast, games,
+    openings, attendance)
+
+18. managershalf(playerid, yearid, teamid, lgid, inseason, half, g, w, l, rank)
+
+19. teamshalf(yearid, lgid, teamid, half, divid, divwin, rank, g, w, l)
+
+20. awardsmanagers(playerid, awardid, yearid, lgid, tie, notes)
+
+21. awardsplayers(playerid, awardid, yearid, lgid, tie, notes)
+
+22. awardssharemanagers(awardid, yearid, lgid, playerid, pointswon, pointsmax, votesfirst)
+
+23. awardsshareplayers(awardid, yearid, lgid, playerid, pointswon, pointsmax, votesfirst)
+
+24. halloffame(playerid, yearid, votedby, ballots, needed, votes, inducted, category, needed_note)
+
+25. collegeplaying(playerid, schoolid, yearid)
+
+26. schools(schoolid, school_name, schoolcity, schoolstate, schoolcountry)
+
+27. salaries(yearid, teamid, lgid, playerid, salary)
+
+28. fangraphs_batting_lahman_like(idfg, season, name, team, g, ab, pa, h, singles, doubles, triples, hr, r, rbi, bb, ibb, so, hbp, sf, sh, sb, cs)
+
+29. fangraphs_batting_standard_ratio(idfg, season, name, team, avg, obp, slg, ops, iso, babip, bb_pc, k_pc, bb_k, gdp)
+
+30. fangraphs_batting_advanced(idfg, season, name, team, woba, wraa, wrc, wrc_plus, war, rar, bat, fld, rep, pos, off, def, dol)
+
+31. fangraphs_plate_discipline(idfg, season, name, team, o_swing_pc, z_swing_pc, swing_pc, o_contact_pc, z_contact_pc, contact_pc, zone_pc, f_strike_pc, swstr_pc, cstr_pc, csw_pc, wpa, wpa_li, clutch, re24, rew, pli, phli, ph)
+
+32. fangraphs_batted_ball(idfg, season, name, team, gb, fb, ld, iffb, gb_fb, ld_pc, gb_pc, fb_pc, iffb_pc, hr_fb, ifh, ifh_pc, bu, buh, buh_pc, pull_pc, cent_pc, oppo_pc, soft_pc, med_pc, hard_pc, hardhit, hardhit_pc, ev, la, barrels, barrel_pc, maxev, tto_pc)
+
+33. fangraphs_baserunning_fielding(idfg, season, name, team, bsr, spd, wsb, ubr, wgdp)
+
+34. fangraphs_batter_pitch_type_summary(idfg, season, name, team, fb_pc, fbv, sl_pc, slv, ch_pc, chv, cb_pc, cbv, sf_pc, sfv, ct_pc, ctv, kn_pc, knv, xx_pc, po_pc, wfb, wsl, wch, wcb, wsf, wct, wkn, wfb_c, wsl_c, wch_c, wcb_c, wsf_c, wct_c, wkn_c)
+
+35. fangraphs_pitching_lahman_like(idfg, season, name, team, w, l, g, gs, cg, sho, sv, ip, h, r, er, hr, bb, so, hbp, wp, bk, tbf)
+
+36. fangraphs_pitching_standard_ratio(idfg, season, name, team, era, k_9, bb_9, k_bb, h_9, hr_9, avg, whip, babip, lob_pc)
+
+37. fangraphs_pitching_advanced(id, season, name, team, war, fip, xfip, siera, era_minus, fip_minus, xfip_minus, rar, dollars, ra9_war)
+
+38. fangraphs_pitching_plate_discipline(idfg, season, name, team, o_swing\_pc, z_swing_pc, swing_pc, o_contact_pc, z_contact_pc, contact_pc, zone_pc, f_strike_pc, swstr_pc, cstr_pc, csw_pc)
+
+39. fangraphs_pitching_batted_ball(idfg, season, name, team, gb_fb, ld_pc, gb_pc, fb_pc, iffb_pc, hr_fb, pull_pc, cent_pc, oppo_pc, soft_pc, med_pc, hard_pc, ev, la, barrels, barrel_pc, maxev, hardhit, hardhit_pc, tto_pc)
+
+40. fangraphs_pitching_pitch_type_summary(idfg, season, name, team, fb_pc, fbv, sl_pc, slv, ct_pc, ctv, cb_pc, cbv, ch_pc, chv, sf_pc, sfv, kn_pc, knv, wfb, wsl, wct, wcb, wch, wsf, wkn, wfb_c, wsl_c, wct_c, wcb_c, wch_c, wsf_c, wkn_c)
+
+41. lahman_fangraphs_bridge(playerid, idfg)
+
+Note: All `playerid` columns reference the `people` table. Composite primary keys are used where appropriate, typically across (playerid, yearid, stint) or (yearid, teamid).

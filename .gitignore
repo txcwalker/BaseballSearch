@@ -1,0 +1,37 @@
+# .gitignore
+
+# Enviroment
+secrets/
+.env
+.env.awsrds
+.env.openai
+.env*
+*.pyc
+*.pyo
+*.pyd
+*.db
+__pycache__/
+
+api
+data
+query_runnner
+logs
+notebooks
+scratch
+streamlit/components
+utils.py
+
+
+# IDE
+.vscode/
+.idea/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/
+outputs/
+*.csv

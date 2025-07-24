@@ -1,0 +1,35 @@
+name: Daily AWS RDS FanGraphs Update
+
+on:
+  schedule:
+    - cron: '0 10 * * *'  # Daily at 10 AM UTC
+  workflow_dispatch:
+
+jobs:
+  update-awsrds:
+    runs-on: ubuntu-latest
+
+    env:
+      PGHOST: ${{ secrets.AWSHOST }}
+      PGPORT: ${{ secrets.AWSPORT }}
+      PGDATABASE: ${{ secrets.AWSDATABASE }}
+      PGUSER: ${{ secrets.AWSUSER }}
+      PGPASSWORD: ${{ secrets.AWSPASSWORD }}
+
+    steps:
+      - name: 📥 Checkout repo
+        uses: actions/checkout@v3
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_etl.txt
+
+      - name: 🔄 Run AWS RDS ETL update
+        run: |
+          python etl/update_fangraphs_awsrds.py
