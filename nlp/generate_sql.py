@@ -5,9 +5,9 @@ import os
 from dotenv import load_dotenv
 
 def load_schema():
-    base_path = os.path.dirname(__file__)  # This points to .../BaseballSearch/nlp
+    base_path = os.path.dirname(__file__)
     schema_path = os.path.join(base_path, "schema", "schema_description.txt")
-    print(f"Loading schema from: {schema_path}")  # <== helpful debug
+    print(f"Loading schema from: {schema_path}")
     if not os.path.exists(schema_path):
         raise FileNotFoundError(f"Schema file not found at: {schema_path}")
     with open(schema_path, "r") as f:
@@ -16,37 +16,40 @@ def load_schema():
 def load_prompt_template():
     base_path = os.path.dirname(__file__)
     prompt_path = os.path.join(base_path, "prompts", "base_prompt.txt")
-    print(f"Loading prompt from: {prompt_path}")  # <== helpful debug
+    print(f"Loading prompt from: {prompt_path}")
     if not os.path.exists(prompt_path):
         raise FileNotFoundError(f"Prompt template not found at: {prompt_path}")
     with open(prompt_path, "r") as f:
         return f.read()
 
-
 def build_prompt(nl_query, schema_str, prompt_template):
     return prompt_template.format(schema=schema_str.strip(), query=nl_query.strip())
 
 def load_openai_key():
+    # ✅ Check Streamlit secrets if available
+    try:
+        import streamlit as st
+        if "OPENAI_API_KEY" in st.secrets:
+            return st.secrets["OPENAI_API_KEY"]
+    except ImportError:
+        pass  # not running in Streamlit
 
+    # ✅ Check env var directly
     if "OPENAI_API_KEY" in os.environ:
         return os.environ["OPENAI_API_KEY"]
 
+    # ✅ Try loading from local .env.openai file
     env_path = os.path.join(os.path.dirname(__file__), "..", ".env.openai")
     if os.path.exists(env_path):
         load_dotenv(env_path)
+        if "OPENAI_API_KEY" in os.environ:
+            return os.environ["OPENAI_API_KEY"]
 
-    if "OPENAI_API_KEY" in os.environ:
-        return os.environ["OPENAI_API_KEY"]
-
-
-    raise ValueError("OpenAI API key not found in environment, .env.openai, or secrets file.")
-
-
-
+    # ❌ Still nothing? Raise an error
+    raise ValueError("OpenAI API key not found in environment, .env.openai, or Streamlit secrets.")
 
 def get_sql_from_gpt(prompt, model="gpt-4", temperature=0):
     client = OpenAI(api_key=load_openai_key())
-
     response = client.chat.completions.create(
         model=model,
         temperature=temperature,
@@ -54,7 +57,6 @@ def get_sql_from_gpt(prompt, model="gpt-4", temperature=0):
             {"role": "user", "content": prompt}
         ]
     )
-
     return response.choices[0].message.content.strip()
 
 def main():
@@ -75,5 +77,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
