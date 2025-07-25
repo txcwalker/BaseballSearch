@@ -73,7 +73,7 @@ Your PostgreSQL database contains the following tables:
 
 28. fangraphs_batting_lahman_like(idfg, season, name, team, g, ab, pa, h, singles, doubles, triples, hr, r, rbi, bb, ibb, so, hbp, sf, sh, sb, cs)
 
-29. fangraphs_batting_standard_ratio(idfg, season, name, team, avg, obp, slg, ops, iso, babip, bb_pc, k_pc, bb_k, gdp)
+29. fangraphs_batting_standard_ratios(idfg, season, name, team, avg, obp, slg, ops, iso, babip, bb_pc, k_pc, bb_k, gdp)
 
 30. fangraphs_batting_advanced(idfg, season, name, team, woba, wraa, wrc, wrc_plus, war, rar, bat, fld, rep, pos, off, def, dol)
 
@@ -87,11 +87,11 @@ Your PostgreSQL database contains the following tables:
 
 35. fangraphs_pitching_lahman_like(idfg, season, name, team, w, l, g, gs, cg, sho, sv, ip, h, r, er, hr, bb, so, hbp, wp, bk, tbf)
 
-36. fangraphs_pitching_standard_ratio(idfg, season, name, team, era, k_9, bb_9, k_bb, h_9, hr_9, avg, whip, babip, lob_pc)
+36. fangraphs_pitching_standard_ratios(idfg, season, name, team, era, k_9, bb_9, k_bb, h_9, hr_9, avg, whip, babip, lob_pc)
 
-37. fangraphs_pitching_advanced(id, season, name, team, war, fip, xfip, siera, era_minus, fip_minus, xfip_minus, rar, dollars, ra9_war)
+37. fangraphs_pitching_advanced(idfg, season, name, team, war, fip, xfip, siera, era_minus, fip_minus, xfip_minus, rar, dollars, ra9_war)
 
-38. fangraphs_pitching_plate_discipline(idfg, season, name, team, o_swing\_pc, z_swing_pc, swing_pc, o_contact_pc, z_contact_pc, contact_pc, zone_pc, f_strike_pc, swstr_pc, cstr_pc, csw_pc)
+38. fangraphs_pitching_plate_discipline(idfg, season, name, team, o_swing_pc, z_swing_pc, swing_pc, o_contact_pc, z_contact_pc, contact_pc, zone_pc, f_strike_pc, swstr_pc, cstr_pc, csw_pc)
 
 39. fangraphs_pitching_batted_ball(idfg, season, name, team, gb_fb, ld_pc, gb_pc, fb_pc, iffb_pc, hr_fb, pull_pc, cent_pc, oppo_pc, soft_pc, med_pc, hard_pc, ev, la, barrels, barrel_pc, maxev, hardhit, hardhit_pc, tto_pc)
 

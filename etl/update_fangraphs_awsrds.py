@@ -141,7 +141,7 @@ batting_splits = {
             "idfg", "season", "name", "team", "g", "ab", "pa", "h", "singles", "doubles", "triples", "hr",
             "r", "rbi", "bb", "ibb", "so", "hbp", "sf", "sh", "sb", "cs"
         ],
-        "fangraphs_batting_standard": [
+        "fangraphs_batting_standard_ratios": [
             "idfg", "season", "name", "team", "avg", "obp", "slg", "ops", "iso", "babip",
             "bb_pc", "kpc", "bb_k", "gdp"
         ],
@@ -174,7 +174,7 @@ pitching_splits = {
             "idfg", "season", "name", "team", "w", "l", "g", "gs", "cg", "sho", "sv", "ip", "h",
             "r", "er", "hr", "bb", "so", "hbp", "wp", "bk", "tbf"
         ],
-        "fangraphs_pitching_standard": [
+        "fangraphs_pitching_standard_ratios": [
             "idfg", "season", "name", "team", "era", "k_9", "bb_9", "k_bb", "h_9", "hr_9", "avg",
             "whip", "babip", "lob_pc"
         ],
@@ -222,7 +222,7 @@ def get_changed_rows(df, table_name, conn):
 
     # Fetch matching rows from DB
     keys = df[key_cols].drop_duplicates()
-    keys_tuple = [tuple(row) for row in keys.to_numpy()]
+    keys_tuple = [tuple(map(lambda x: x.item() if hasattr(x, "item") else x, row)) for row in keys.to_numpy()]
     if not keys_tuple:
         return pd.DataFrame()
 
@@ -264,13 +264,15 @@ def upsert_table(df, table_name, conn):
         print(f"✅ No updates needed for `{table_name}`")
         return
 
-    print(f"🔍 {len(changed)} rows in `{table_name}` will be updated:")
+    print(f"🔍 {len(changed)} rows in `{table_name}` will be updated.")
+
+    # Show preview of changed rows
     preview_cols = ["idfg", "season"]
     if "name" in changed.columns:
-        preview_cols += ["name", "team"] if "team" in changed.columns else ["name"]
-    elif "team" in changed.columns:
+        preview_cols += ["name"]
+    if "team" in changed.columns:
         preview_cols += ["team"]
-    print(changed[preview_cols])
+    print(changed[preview_cols].head(5))  # Just show top 5 for readability
 
     key_cols = ["idfg", "season"]
     all_cols = list(df.columns)
@@ -295,15 +297,30 @@ def upsert_table(df, table_name, conn):
     values = [tuple(row) for row in df.to_numpy()]
     cursor = conn.cursor()
     try:
+        print(f"🚀 Running UPSERT on `{table_name}` with {len(values)} total rows...")
         execute_values(cursor, sql, values)
         conn.commit()
-        print(f"✅ Updated {len(changed)} rows in `{table_name}`")
+        print(f"✅ Successfully updated {len(changed)} row(s) in `{table_name}`")
     except Exception as e:
         print(f"❌ Failed to update `{table_name}`: {e}")
         conn.rollback()
     finally:
         cursor.close()
 
+if __name__ == "__main__":
+    print("🔌 Connecting to AWS RDS...")
+    conn = psycopg2.connect(**DB_PARAMS)
+
+    # Merge all split tables
+    processed_tables = {**batting_dfs, **pitching_dfs}
+    print(f"🧩 Found {len(processed_tables)} FanGraphs tables to process")
+
+    for table_name, df in processed_tables.items():
+        print(f"📁 Processing `{table_name}` with {len(df)} rows")
+        upsert_table(df, table_name, conn)
+
+    conn.close()
+    print("✅ All tables processed and connection closed.")
 
 
 

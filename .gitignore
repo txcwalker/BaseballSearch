@@ -5,6 +5,7 @@ secrets/
 .env
 .env.awsrds
 .env.openai
+.env.gemini
 .env*
 *.pyc
 *.pyo
