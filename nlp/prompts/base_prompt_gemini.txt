@@ -29,6 +29,7 @@ There are three types of tables in this database:
 - Use the *minimal number of joins* necessary to answer the question.
 - Avoid using `people`, `lahman_fangraphs_bridge`, or other Lahman tables unless they are required.
 - For recent seasons (2000+), prefer FanGraphs tables.
+- Always order by statistic and never by name or other text unless specifically requested
 
 ### Qualification Rules
 

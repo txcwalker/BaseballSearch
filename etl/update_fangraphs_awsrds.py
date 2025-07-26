@@ -72,7 +72,11 @@ def normalize(df):
     df.replace({'\\$': '', '%': ''}, regex=True, inplace=True)
     df = df.map(lambda x: str(x).strip() if isinstance(x, str) else x)
     for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors='ignore')
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except Exception:
+            pass  # or: logging.warning(f"Could not convert column {col} to numeric")
+
     return df
 
 # Standardize column names (strip and lowercase)
@@ -98,14 +102,22 @@ def clean_columns(df):
 # Attempt to convert all data to numeric where possible
 def convert_numeric(df):
     for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors='ignore')
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except Exception:
+            pass  # or: logging.warning(f"Could not convert column {col} to numeric")
+
     return df
 
 # Normalize parenthesis-style negative numbers like (0.2) -> -0.2
 def normalize_negatives(df):
-    return df.applymap(
-        lambda x: float(re.sub(r'^\((.*)\)$', r'-\1', x)) if isinstance(x, str) and re.match(r'^\(\d+(\.\d+)?\)$', x) else x
-    )
+    def convert(x):
+        if isinstance(x, str) and re.match(r'^\(\d+(\.\d+)?\)$', x):
+            return float(re.sub(r'^\((.*)\)$', r'-\1', x))
+        return x
+
+    return df.apply(lambda col: col.map(convert))
+
 
 # Fix duplicate 'fb%' column ambiguity in pitching data
 def resolve_fb_conflict(df):

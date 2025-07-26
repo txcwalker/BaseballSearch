@@ -42,7 +42,7 @@ def load_gemini_key():
 def get_sql_from_gemini(prompt):
     genai.configure(api_key=load_gemini_key())
 
-    model = genai.GenerativeModel("models/gemini-1.5-flash")
+    model = genai.GenerativeModel("models/gemini-2.5-flash")
 
 
     response = model.generate_content(

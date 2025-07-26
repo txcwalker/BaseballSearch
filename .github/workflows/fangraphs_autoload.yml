@@ -30,6 +30,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements_etl.txt
 
+      - name: 🛰️ Print GitHub Runner Public IP
+        run: |
+          echo "📡 GitHub runner's IP address is:"
+          curl https://ifconfig.me
+
       - name: 🔄 Run AWS RDS ETL update
         run: |
           python etl/update_fangraphs_awsrds.py
