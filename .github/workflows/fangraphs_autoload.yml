@@ -7,7 +7,7 @@ on:
 
 jobs:
   update-awsrds:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # 🔁 Use your EC2 runner instead of ubuntu-latest
 
     env:
       PGHOST: ${{ secrets.AWSHOST }}
