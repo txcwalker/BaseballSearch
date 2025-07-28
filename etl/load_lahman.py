@@ -1,16 +1,21 @@
+# etl/load_lahman.py
+# Script to load lahman data from the local csvs files into the local database
+
+# Importing Python Packages
 import os
 import csv
 import psycopg2
 from dotenv import load_dotenv
 
-load_dotenv()
+# Connecting to database
+load_dotenv(dotenv_path='../.env')
 
 DB_PARAMS = {
-    "dbname": os.getenv("PGDATABASE", "baseball"),
-    "user": os.getenv("PGUSER", "postgres"),
-    "password": os.getenv("PGPASSWORD", "Sqr693202!?!"),
-    "host": os.getenv("PGHOST", "localhost"),
-    "port": os.getenv("PGPORT", "5432"),
+    "dbname": os.getenv("PGDATABASE"),
+    "user": os.getenv("PGUSER"),
+    "password": os.getenv("PGPASSWORD"),
+    "host": os.getenv("PGHOST"),
+    "port": os.getenv("PGPORT"),
 }
 
 CSV_DIR = "../data/lahman_raw"

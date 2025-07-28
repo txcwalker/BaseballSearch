@@ -46,6 +46,8 @@ There are three types of tables in this database:
 - For recent seasons (2000+), prefer FanGraphs tables.
 - Always order by statistic and never by name or other text unless specifically requested
 - If all required fields (e.g., name, team, pa, stat) exist in a single table, prefer writing the query using only that table — avoid unnecessary joins.
+- Player position data is located in the Fielding table and FieldingOF provides specific outfield positions (post season data is avaialable in FieldingPost and FieldingOFPost)
+    - Fangraphs_Batting_Advanced also has a pos column but this is not player position
 
 ### Player Deduplication Rules:
 - A player may appear multiple times in a single season due to team changes (e.g., trades).

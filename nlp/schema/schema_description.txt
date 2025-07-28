@@ -143,17 +143,18 @@ PIT → PIT    | 1887 –      | Pittsburgh Pirates
 CLV → CL4    | 1889 – 1899 | Cleveland Spiders
 BRO → BRO    | 1890 – 1957 | Brooklyn Dodgers
 LAD → LAN    | 1958 – 2000 | Los Angeles Dodgers
-LAN → LAN    | 2001 – 2001 | Los Angeles Dodgers
+LAN → LAN    | 2001 –      | Los Angeles Dodgers
 BLN → BLN    | 1892 – 1899 | Baltimore Orioles
 LOU → LS3    | 1892 – 1899 | Louisville Colonels
 STL → SLN    | 1892 –      | St. Louis Cardinals
 WSN → WSN    | 1892 – 1899 | Washington Senators
-HOU → HOU    | 1962 –      | Houston Astros
+HOU → HOU    | 1962 – 2012 | Houston Astros
 NYM → NYN    | 1962 –      | New York Mets
 MON → MON    | 1969 – 2001 | Montreal Expos
 SDP → SDN    | 1969 –      | San Diego Padres
 COL → COL    | 1993 –      | Colorado Rockies
-FLA → FLO    | 1993 – 2001 | Florida Marlins
+FLA → FLO    | 1993 – 2011 | Florida Marlins
+FLA → MIA    | 2012 –      | Florida Marlins
 ARI → ARI    | 1998 –      | Arizona Diamondbacks
 MIL → MIL    | 1998 –      | Milwaukee Brewers
 
@@ -164,7 +165,8 @@ NYY → NYA    | 1903 –      | New York Yankees
 
 BOS → BOS    | 1901 –      | Boston Red Sox
 CHW → CHA    | 1901 –      | Chicago White Sox
-CLE → CLE    | 1901 –      | Cleveland Indians
+CLE → CLE    | 1901 – 2021 | Cleveland Indians
+CLE → CLE    | 2022 –      | Cleveland Indians
 DET → DET    | 1901 –      | Detroit Tigers
 
 MLA → MLA    | 1901 – 1901 | Milwaukee Brewers
@@ -184,6 +186,7 @@ ANA → ANA    | 1997 – 2001 | Anaheim Angels
 
 WSA → WS2    | 1961 – 1971 | Washington Senators
 TEX → TEX    | 1972 –      | Texas Rangers
+HOU → HOU    | 2013 –      | Houston Astros
 
 KCR → KCA    | 1969 –      | Kansas City Royals
 SEP → SE1    | 1969 – 1969 | Seattle Pilots
@@ -191,7 +194,8 @@ MIL → ML4    | 1970 – 1997 | Milwaukee Brewers
 
 SEA → SEA    | 1977 –      | Seattle Mariners
 TOR → TOR    | 1977 –      | Toronto Blue Jays
-TBD → TBA    | 1998 – 2001 | Tampa Bay Devil Rays
+TBD → TBA    | 1998 – 2007 | Tampa Bay Devil Rays
+TBD → TBA    | 2008 –      | Tampa Bay Rays
 
 
 ### Country Abbreviations
