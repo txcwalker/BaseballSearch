@@ -99,4 +99,107 @@ Your PostgreSQL database contains the following tables:
 
 41. lahman_fangraphs_bridge(playerid, idfg)
 
+
+---
+## Lookup Dictionaries
+
+## Franchise Abbreviation Lookup
+
+Each entry below maps a `team_abbr` to its `franchise_abbr` and includes the active years for that team. If no separate franchise abbreviation was provided, the `team_abbr` is used.
+
+### National League
+
+BSN → BSN    | 1876 – 1952 | Boston Braves
+MLN → ML1    | 1953 – 1965 | Milwaukee Braves
+ATL → ATL    | 1966 –      | Atlanta Braves
+
+CHC → CHN    | 1876 –      | Chicago Cubs
+
+CIN → CN1    | 1876 – 1880 | Cincinnati Reds
+CIN → CIN    | 1890 –      | Cincinnati Reds
+
+HAR → HAR    | 1876 – 1877 | Hartford Dark Blues
+LOU → LS1    | 1876 – 1877 | Louisville Grays
+NYU → NY3    | 1876 – 1876 | New York Mutuals
+ATH → PHN    | 1876 – 1876 | Philadelphia Athletics
+STL → SL3    | 1876 – 1877 | St. Louis Brown Stockings
+IND → IN1    | 1878 – 1878 | Indianapolis Blues
+MLG → ML2    | 1878 – 1878 | Milwaukee Grays
+PRO → PRO    | 1878 – 1885 | Providence Grays
+BUF → BFN    | 1879 – 1885 | Buffalo Bisons
+CLV → CL2    | 1879 – 1884 | Cleveland Blues
+SYR → SR1    | 1879 – 1879 | Syracuse Stars
+TRO → TRN    | 1879 – 1882 | Troy Trojans
+WOR → WOR    | 1880 – 1882 | Worcester Ruby Legs
+DTN → DTN    | 1881 – 1888 | Detroit Wolverines
+NYG → NY1    | 1883 – 1957 | New York Giants
+SFG → SFN    | 1958 –      | San Francisco Giants
+PHI → PHI    | 1883 –      | Philadelphia Phillies
+SLM → SL5    | 1885 – 1886 | St. Louis Maroons
+KCN → KCN    | 1886 – 1886 | Kansas City Cowboys
+WSN → WS8    | 1886 – 1889 | Washington Nationals
+IND → IN3    | 1887 – 1889 | Indianapolis Hoosiers
+PIT → PIT    | 1887 –      | Pittsburgh Pirates
+CLV → CL4    | 1889 – 1899 | Cleveland Spiders
+BRO → BRO    | 1890 – 1957 | Brooklyn Dodgers
+LAD → LAN    | 1958 – 2000 | Los Angeles Dodgers
+LAN → LAN    | 2001 – 2001 | Los Angeles Dodgers
+BLN → BLN    | 1892 – 1899 | Baltimore Orioles
+LOU → LS3    | 1892 – 1899 | Louisville Colonels
+STL → SLN    | 1892 –      | St. Louis Cardinals
+WSN → WSN    | 1892 – 1899 | Washington Senators
+HOU → HOU    | 1962 –      | Houston Astros
+NYM → NYN    | 1962 –      | New York Mets
+MON → MON    | 1969 – 2001 | Montreal Expos
+SDP → SDN    | 1969 –      | San Diego Padres
+COL → COL    | 1993 –      | Colorado Rockies
+FLA → FLO    | 1993 – 2001 | Florida Marlins
+ARI → ARI    | 1998 –      | Arizona Diamondbacks
+MIL → MIL    | 1998 –      | Milwaukee Brewers
+
+### American League
+
+BLA → BLA    | 1901 – 1902 | Baltimore Orioles
+NYY → NYA    | 1903 –      | New York Yankees
+
+BOS → BOS    | 1901 –      | Boston Red Sox
+CHW → CHA    | 1901 –      | Chicago White Sox
+CLE → CLE    | 1901 –      | Cleveland Indians
+DET → DET    | 1901 –      | Detroit Tigers
+
+MLA → MLA    | 1901 – 1901 | Milwaukee Brewers
+SLB → SLA    | 1902 – 1953 | St. Louis Browns
+BAL → BAL    | 1954 –      | Baltimore Orioles
+
+PHA → PHA    | 1901 – 1954 | Philadelphia Athletics
+KCA → KC1    | 1955 – 1967 | Kansas City Athletics
+OAK → OAK    | 1968 –      | Oakland Athletics
+
+WSH → WS1    | 1901 – 1960 | Washington Nationals
+MIN → MIN    | 1961 –      | Minnesota Twins
+
+LAA → LAA    | 1961 – 1964 | Los Angeles Angels
+CAL → CAL    | 1965 – 1996 | California Angels
+ANA → ANA    | 1997 – 2001 | Anaheim Angels
+
+WSA → WS2    | 1961 – 1971 | Washington Senators
+TEX → TEX    | 1972 –      | Texas Rangers
+
+KCR → KCA    | 1969 –      | Kansas City Royals
+SEP → SE1    | 1969 – 1969 | Seattle Pilots
+MIL → ML4    | 1970 – 1997 | Milwaukee Brewers
+
+SEA → SEA    | 1977 –      | Seattle Mariners
+TOR → TOR    | 1977 –      | Toronto Blue Jays
+TBD → TBA    | 1998 – 2001 | Tampa Bay Devil Rays
+
+
+### Country Abbreviations
+- USA: United States
+- P.R.: Puerto Rico
+- D.R.: Dominican Republic
+
+
+
+
 Note: All `playerid` columns reference the `people` table. Composite primary keys are used where appropriate, typically across (playerid, yearid, stint) or (yearid, teamid).

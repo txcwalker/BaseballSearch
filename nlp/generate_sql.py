@@ -20,7 +20,7 @@ def load_prompt_template():
     print(f"Loading prompt from: {prompt_path}")
     if not os.path.exists(prompt_path):
         raise FileNotFoundError(f"Prompt template not found at: {prompt_path}")
-    with open(prompt_path, "r") as f:
+    with open(prompt_path, "r", encoding = 'utf-8', errors = "replace") as f:
         return f.read()
 
 def build_prompt(nl_query, schema_str, prompt_template):
@@ -70,6 +70,21 @@ def get_sql_from_gemini(prompt):
 #         messages=[{"role": "user", "content": prompt}]
 #     )
 #     return response.choices[0].message.content.strip()
+
+def handle_model_response(response_text):
+    # If the model follows instructions, return directly
+    if response_text.startswith("Unfortunately I currently do not have access"):
+        return response_text
+    if response_text.startswith("I can only answer baseball questions."):
+        return response_text
+
+    # Optional: fail safe — no SQL present
+    if "SELECT" not in response_text.upper():
+        return "I wasn’t able to generate a valid query for that question."
+
+    # Otherwise, return the SQL
+    return None
+
 
 def main():
     import argparse
