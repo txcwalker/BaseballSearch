@@ -14,6 +14,6 @@ def render_sidebar():
         # Navigation
         st.markdown("### Navigation")
         st.page_link("app.py", label="🏠 Home")
-        st.page_link("pages/About.py", label="📘 about")
-        st.page_link("pages/Contact.py", label="✉️ contact")
+        st.page_link("pages/about.py", label="📘 About")
+        st.page_link("pages/contact.py", label="✉️ Contact")
         st.page_link("pages/how_to_use.py", label = "❓ How to Use")
