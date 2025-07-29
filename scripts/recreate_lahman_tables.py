@@ -1,7 +1,12 @@
-import os
-import psycopg2
-from pathlib import Path
-from dotenv import load_dotenv
+#scripts/recreate_lahman_tables
+
+# Script to recreate lahman tables so they can be input into aws rds
+
+# Import Statements
+import os # Package to provide accss to file system paths and environment variables
+import psycopg2 # postgres adaptor for python
+from pathlib import Path # Using this as better version of os.path function
+from dotenv import load_dotenv # Package which load enviroment variables from the .env files
 import re
 
 # Load environment variables
@@ -15,6 +20,7 @@ DB_PARAMS = {
     "port": os.getenv("AWSPORT"),
 }
 
+# Fucntion that adds a DROP TABLE statement to make sure we are starting clean before tables are put into aws rds
 def inject_drop_statements(sql_script):
     # Find all CREATE TABLE table_name occurrences
     pattern = re.compile(r"CREATE TABLE (\w+)", re.IGNORECASE)
@@ -25,6 +31,7 @@ def inject_drop_statements(sql_script):
 
     return f"{drops}\n\n{sql_script}"
 
+# Function that laods the SQL schema file and, executes the ijnect drop function then loads the tables in to aws rds
 def execute_sql_file(path):
     with open(path, "r", encoding="utf-8") as f:
         raw_sql = f.read()

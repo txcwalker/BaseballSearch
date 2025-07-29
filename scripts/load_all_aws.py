@@ -1,5 +1,7 @@
 # etl/load_all_to_rds.py
 
+# script for a one time load of local tables into aws rds
+
 import os
 import csv
 import psycopg2
@@ -17,21 +19,27 @@ DB_PARAMS = {
     "port": os.getenv("AWSPORT"),
 }
 
+# paths for where the files are stored
 FANGRAPHS_DIR = "../data/processed/fangraphs"
 LAHMAN_DIR = "../data/lahman_raw"
 BRIDGE_FILE = "../data/processed/lahman_fangraphs_bridge.csv"
 
+#
 def load_with_copy(conn, filepath):
+    # Grabbing table name from the path
     table_name = os.path.splitext(os.path.basename(filepath))[0].lower()
     print(f"📥 Loading {filepath} into `{table_name}`...")
 
+    # OPening and reading first line (header) to find column names
     with open(filepath, 'r', encoding='utf-8') as f:
         header = f.readline().strip().split(',')
         columns = ", ".join([f'"{col}"' if not col.isidentifier() else col for col in header])
 
+    # Ensures a clean slate, removes existing table if exists
     with conn.cursor() as cur:
         cur.execute(f"DROP TABLE IF EXISTS {table_name}")
 
+        # Uses the first X rows to guess each columns data type, creating SQL CREATE TABLE notation as seen in fangraphs_schema.sql
         def infer_sql_type(value):
             if value == "" or value is None:
                 return "TEXT"
@@ -57,8 +65,10 @@ def load_with_copy(conn, filepath):
 
         col_types = ", ".join([f'"{col}" {inferred_types[col]}' for col in header])
 
+        # Creates the table
         cur.execute(f"CREATE TABLE {table_name} ({col_types})")
 
+        # bulk loads the tables
         with open(filepath, 'r', encoding='utf-8') as f:
             next(f)  # skip header
             cur.copy_expert(f"COPY {table_name} FROM STDIN WITH CSV", f)
@@ -70,17 +80,17 @@ def load_with_copy(conn, filepath):
 def main():
     conn = psycopg2.connect(**DB_PARAMS)
 
-    # 1. Load FanGraphs
+    # Load FanGraphs
     for f in os.listdir(FANGRAPHS_DIR):
         if f.endswith(".csv"):
             load_with_copy(conn, os.path.join(FANGRAPHS_DIR, f))
 
-    # 2. Load Lahman
+    # Load Lahman
     for f in os.listdir(LAHMAN_DIR):
         if f.endswith(".csv"):
             load_with_copy(conn, os.path.join(LAHMAN_DIR, f))
 
-    # 3. Load bridge table
+    # Load bridge table
     load_with_copy(conn, BRIDGE_FILE)
 
     conn.close()

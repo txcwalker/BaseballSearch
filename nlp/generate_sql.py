@@ -1,10 +1,14 @@
 # Uses Gemini to turn text → SQL (OpenAI version commented out)
 
-# import openai  # ← deprecated in favor of Gemini
+# import openai  #deprecated in favor of Gemini, first iteration used openai but usage limits were too low even during testing
+
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 
+# Functions to load the schema and prompt to be provided to the model and the direction it will take to write its queries
+# The schema_description tells it exactly what tables exist in the database along with their corresponding
+# variables. Addtionally there a few small dictionaries to help the model sort through abbreviations and AL v NL
 def load_schema():
     base_path = os.path.dirname(__file__)
     schema_path = os.path.join(base_path, "schema", "schema_description.txt")
@@ -14,6 +18,7 @@ def load_schema():
     with open(schema_path, "r") as f:
         return f.read()
 
+# The prompt includes the specific directions for the model to use when constructing the individual sql queries
 def load_prompt_template():
     base_path = os.path.dirname(__file__)
     prompt_path = os.path.join(base_path, "prompts", "base_prompt_gemini.txt")
@@ -23,9 +28,11 @@ def load_prompt_template():
     with open(prompt_path, "r", encoding = 'utf-8', errors = "replace") as f:
         return f.read()
 
+# Function to build the prompt based on the input
 def build_prompt(nl_query, schema_str, prompt_template):
     return prompt_template.format(schema=schema_str.strip(), query=nl_query.strip())
 
+# Fetching Gemini API Key
 def load_gemini_key():
     if "GEMINI_API_KEY" in os.environ:
         return os.environ["GEMINI_API_KEY"]
@@ -39,6 +46,7 @@ def load_gemini_key():
 
     raise ValueError("Gemini API key not found in environment or .env.gemini")
 
+# # Calling model to get response
 def get_sql_from_gemini(prompt):
     genai.configure(api_key=load_gemini_key())
 
@@ -71,6 +79,7 @@ def get_sql_from_gemini(prompt):
 #     )
 #     return response.choices[0].message.content.strip()
 
+# Function to handle erroneous requests
 def handle_model_response(response_text):
     # If the model follows instructions, return directly
     if response_text.startswith("Unfortunately I currently do not have access"):

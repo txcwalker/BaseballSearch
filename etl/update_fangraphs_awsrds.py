@@ -1,5 +1,8 @@
 # etl/update_fangraphs_awsrds.py
 
+# Script that updates the aws rds database, runs mornings at 7 AM CST and is automated via a github runner connect to AWS
+
+# Import Statements
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
@@ -21,8 +24,6 @@ DB_PARAMS = {
     "host": os.getenv("AWSHOST"),
     "port": os.getenv("AWSPORT"),
 }
-
-CURRENT_YEAR = date.today().year
 
 # Renaming maps
 batting_rename_map = {
@@ -50,6 +51,8 @@ pitching_rename_map = {
 
 YEAR = date.today().year
 
+
+# Some Data cleaning, including grabbing just year in questoin, renaming columns and replcing problematic symbols
 try:
     df_bat = batting_stats(YEAR)
     df_bat["Season"] = YEAR
@@ -66,8 +69,10 @@ try:
 except Exception as e:
     print(f"⚠️ Skipped pitching {YEAR}: {e}")
 
+# Getting rid of batters with 0 ABs
 df_bat = df_bat[df_bat['PA'] > 0]
 
+# Getting df ready for update by replacing problematic symbols, normalizing column names and setting dtype of columns
 def normalize(df):
     df.replace({'\\$': '', '%': ''}, regex=True, inplace=True)
     df = df.map(lambda x: str(x).strip() if isinstance(x, str) else x)
@@ -224,7 +229,7 @@ def split_dataframe(df, mapping):
 batting_dfs = split_dataframe(df_bat, batting_splits)
 pitching_dfs = split_dataframe(df_pitch, pitching_splits)
 
-
+# Getting rows that have changed in the newest version of the table
 def get_changed_rows(df, table_name, conn):
     key_cols = ["idfg", "season"]
     all_cols = df.columns.tolist()
@@ -264,7 +269,7 @@ def get_changed_rows(df, table_name, conn):
     ]
     return changed_rows
 
-
+# Safe Upsert of the table in the aws rds
 def upsert_table(df, table_name, conn):
     if df.empty:
         print(f"⚠️ Skipping empty table: {table_name}")

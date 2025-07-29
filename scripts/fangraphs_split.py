@@ -1,5 +1,8 @@
-# fangraphs_split
+# scripts/fangraphs_split
 
+# Script to split the fangrapsh data into smaller easier to handle and eventually search data tan;es
+
+# Import statements
 import pandas as pd
 import os
 import re

@@ -1,7 +1,10 @@
-# fangraphs_concat
+# scripts/fangraphs_concat
 
+# Script to concat the year of year data downloaded via fangraphs_data_retrieval
+
+# Import Statements
 import pandas as pd
-import glob
+import glob # packages used to search through files and directories using the wildcard (*) character
 
 # Merge all batting files
 batting_files = glob.glob("../data/fangraphs/batting_by_year/*.csv")

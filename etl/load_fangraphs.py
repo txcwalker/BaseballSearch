@@ -1,4 +1,5 @@
 # etl/load_fangraphs.py
+
 # Script to load fangraphs data from the local csvs files into the local database
 
 # Importing Python Packages

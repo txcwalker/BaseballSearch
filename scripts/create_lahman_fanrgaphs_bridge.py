@@ -1,5 +1,8 @@
 # scripts/create_lahman_fangraphs_bridge.py
 
+# Script that creates a dictionary between the player ids for the fangraphs (idfg) and Lahman tables (playerid)
+
+# Import statements
 import psycopg2
 import pandas as pd
 from dotenv import load_dotenv
@@ -16,10 +19,12 @@ DB_PARAMS = {
     "port": os.getenv("PGPORT"),
 }
 
+# Helper function to execute a query and return both rows and column names
 def fetch_query(cur, query):
     cur.execute(query)
     return cur.fetchall(), [desc[0] for desc in cur.description]
 
+# Creation of the final table
 def main():
     with psycopg2.connect(**DB_PARAMS) as conn:
         cur = conn.cursor()
@@ -32,6 +37,8 @@ def main():
         """
         lahman_rows, lahman_cols = fetch_query(cur, lahman_query)
         lahman_df = pd.DataFrame(lahman_rows, columns=lahman_cols)
+
+        # Creating Full Name Field
         lahman_df["name"] = lahman_df["namefirst"].str.strip() + " " + lahman_df["namelast"].str.strip()
 
         # Fetch player info from FanGraphs

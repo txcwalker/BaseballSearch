@@ -1,7 +1,9 @@
 # scripts/download_fangraphs_all_years.py
 
+# Script for the one time download of all fangraphs data
+
+# Import Statements
 from pybaseball import batting_stats, pitching_stats
-import pandas as pd
 from datetime import date
 from tqdm import tqdm
 import os
@@ -42,6 +44,9 @@ pitching_rename_map = {
     '-WPA': 'wpa_minus',
 }
 
+# downloading data using pybaseball packages, Additionally doing some minimal data cleanign to get more workables tables
+# cleaning includes, column reanmes and removal or problematic symbols
+# last part is saving the data year by year in individual tables to be concatenated later (By fangraphs_concat)
 for year in tqdm(range(START_YEAR, END_YEAR + 1), desc="Year Progress"):
     try:
         df_bat = batting_stats(year, qual=QUALIFIED)
