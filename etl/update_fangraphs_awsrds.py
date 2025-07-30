@@ -51,6 +51,24 @@ pitching_rename_map = {
 
 YEAR = date.today().year
 
+# Fix duplicate 'fb%' column ambiguity in pitching data
+def resolve_fb_conflict(df):
+    rename_map = {
+        'fb%': 'fyb_pc',
+        'fb% 2': 'fb_pc'
+    }
+
+    affected_cols = [col for col in df.columns if col in rename_map]
+
+    if affected_cols:
+        print(f"🔧 Renaming columns due to FB% conflict:")
+        for col in affected_cols:
+            print(f"   ➤ '{col}' → '{rename_map[col]}'")
+    else:
+        print("✅ No FB% column conflicts found.")
+
+    return df.rename(columns=rename_map)
+
 
 # Some Data cleaning, including grabbing just year in questoin, renaming columns and replcing problematic symbols
 try:
@@ -124,28 +142,10 @@ def normalize_negatives(df):
     return df.apply(lambda col: col.map(convert))
 
 
-# Fix duplicate 'fb%' column ambiguity in pitching data
-def resolve_fb_conflict(df):
-    rename_map = {
-        'fb%': 'fyb_pc',
-        'fb% 2': 'fb_pc'
-    }
-
-    affected_cols = [col for col in df.columns if col in rename_map]
-
-    if affected_cols:
-        print(f"🔧 Renaming columns due to FB% conflict:")
-        for col in affected_cols:
-            print(f"   ➤ '{col}' → '{rename_map[col]}'")
-    else:
-        print("✅ No FB% column conflicts found.")
-
-    return df.rename(columns=rename_map)
-
 # Clean and fix dataframes
+df_pitch = resolve_fb_conflict(df_pitch)
 df_bat = normalize_negatives(convert_numeric(clean_columns(df_bat)))
 df_pitch = clean_columns(df_pitch)
-df_pitch = resolve_fb_conflict(df_pitch)
 df_pitch = normalize_negatives(convert_numeric(df_pitch))
 
 # Fill missing values

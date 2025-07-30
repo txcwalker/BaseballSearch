@@ -283,7 +283,7 @@ CREATE TABLE fangraphs_pitching_batted_ball (
     gb_fb NUMERIC,
     ld_pc NUMERIC,
     gb_pc NUMERIC,
-    fb_pc NUMERIC,
+    fyb_pc NUMERIC,
     iffb_pc NUMERIC,
     hr_fb NUMERIC,
     pull_pc NUMERIC,

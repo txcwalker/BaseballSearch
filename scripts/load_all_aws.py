@@ -37,7 +37,7 @@ def load_with_copy(conn, filepath):
 
     # Ensures a clean slate, removes existing table if exists
     with conn.cursor() as cur:
-        cur.execute(f"DROP TABLE IF EXISTS {table_name}")
+        cur.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE" )
 
         # Uses the first X rows to guess each columns data type, creating SQL CREATE TABLE notation as seen in fangraphs_schema.sql
         def infer_sql_type(value):

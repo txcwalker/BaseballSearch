@@ -17,6 +17,24 @@ pitching_df = pd.read_csv(pitching_path)
 # Filter out rows with no PA (plate appearances)
 batting_df = batting_df[batting_df['PA'] > 0]
 
+# Fix duplicate 'fb%' column ambiguity in pitching data
+def resolve_fb_conflict(df):
+    rename_map = {
+        'FB%': 'fyb_pc',
+        'FB% 2': 'fb_pc'
+    }
+
+    affected_cols = [col for col in df.columns if col in rename_map]
+
+    if affected_cols:
+        print(f"🔧 Renaming columns due to FB% conflict:")
+        for col in affected_cols:
+            print(f"   ➤ '{col}' → '{rename_map[col]}'")
+    else:
+        print("✅ No FB% column conflicts found.")
+
+    return df.rename(columns=rename_map)
+
 # Standardize column names (strip and lowercase)
 def clean_columns(df):
     original_columns = df.columns
@@ -50,28 +68,10 @@ def normalize_negatives(df):
         lambda x: float(re.sub(r'^\((.*)\)$', r'-\1', x)) if isinstance(x, str) and re.match(r'^\(\d+(\.\d+)?\)$', x) else x
     )
 
-# Fix duplicate 'fb%' column ambiguity in pitching data
-def resolve_fb_conflict(df):
-    rename_map = {
-        'fb%': 'fyb_pc',
-        'fb% 2': 'fb_pc'
-    }
-
-    affected_cols = [col for col in df.columns if col in rename_map]
-
-    if affected_cols:
-        print(f"🔧 Renaming columns due to FB% conflict:")
-        for col in affected_cols:
-            print(f"   ➤ '{col}' → '{rename_map[col]}'")
-    else:
-        print("✅ No FB% column conflicts found.")
-
-    return df.rename(columns=rename_map)
-
 # Clean and fix dataframes
+pitching_df = resolve_fb_conflict(pitching_df)
 batting_df = normalize_negatives(convert_numeric(clean_columns(batting_df)))
 pitching_df = clean_columns(pitching_df)
-pitching_df = resolve_fb_conflict(pitching_df)
 pitching_df = normalize_negatives(convert_numeric(pitching_df))
 
 # Fill missing values
