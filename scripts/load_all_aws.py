@@ -32,7 +32,7 @@ def load_with_copy(conn, filepath):
 
     # OPening and reading first line (header) to find column names
     with open(filepath, 'r', encoding='utf-8') as f:
-        header = f.readline().strip().split(',')
+        header = [col.strip().lower() for col in f.readline().strip().split(',')]
         columns = ", ".join([f'"{col}"' if not col.isidentifier() else col for col in header])
 
     # Ensures a clean slate, removes existing table if exists
@@ -55,11 +55,17 @@ def load_with_copy(conn, filepath):
 
         # Read first N rows to guess types
         with open(filepath, newline='', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            sample = [next(reader) for _ in range(10)]  # adjust as needed
+            reader = csv.reader(f)
+            raw_header = next(reader)
+            header = [col.strip().lower() for col in raw_header]  # force lowercase
+
+            # Read a few rows and ensure each row uses lowercase keys
+            sample_rows = [row for _, row in zip(range(10), reader)]
+            sample = [dict(zip(header, row)) for row in sample_rows]
+
             inferred_types = {}
             for col in header:
-                sample_vals = [row[col] for row in sample if row[col] not in ("", None)]
+                sample_vals = [row[col] for row in sample if col in row and row[col] not in ("", None)]
                 first_val = sample_vals[0] if sample_vals else ""
                 inferred_types[col] = infer_sql_type(first_val)
 

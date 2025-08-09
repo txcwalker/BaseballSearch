@@ -17,6 +17,14 @@ pitching_df = pd.read_csv(pitching_path)
 # Filter out rows with no PA (plate appearances)
 batting_df = batting_df[batting_df['PA'] > 0]
 
+# === Restore doubles, triples, singles ===
+if "1B" in batting_df.columns:
+    batting_df = batting_df.rename(columns={"1B": "singles"})
+if "2B" in batting_df.columns:
+    batting_df = batting_df.rename(columns={"2B": "doubles"})
+if "3B" in batting_df.columns:
+    batting_df = batting_df.rename(columns={"3B": "triples"})
+
 # Fix duplicate 'fb%' column ambiguity in pitching data
 def resolve_fb_conflict(df):
     rename_map = {
@@ -85,7 +93,7 @@ batting_splits = {
         "idfg", "season", "name", "team", "g", "ab", "pa", "h", "singles", "doubles", "triples", "hr",
         "r", "rbi", "bb", "ibb", "so", "hbp", "sf", "sh", "sb", "cs"
     ],
-    "fangraphs_batting_standard": [
+    "fangraphs_batting_standard_ratios": [
         "idfg", "season", "name", "team", "avg", "obp", "slg", "ops", "iso", "babip",
         "bb_pc", "kpc", "bb_k", "gdp"
     ],
@@ -118,7 +126,7 @@ pitching_splits = {
         "idfg", "season", "name", "team", "w", "l", "g", "gs", "cg", "sho", "sv", "ip", "h",
         "r", "er", "hr", "bb", "so", "hbp", "wp", "bk", "tbf"
     ],
-    "fangraphs_pitching_standard": [
+    "fangraphs_pitching_standard_ratios": [
         "idfg", "season", "name", "team", "era", "k_9", "bb_9", "k_bb", "h_9", "hr_9", "avg",
         "whip", "babip", "lob_pc"
     ],

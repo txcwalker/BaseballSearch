@@ -17,6 +17,25 @@ from render_sidebar import render_sidebar
 
 
 
+def title_case_columns(df):
+    df.columns = [
+        col.replace("_", " ").title() if isinstance(col, str) else col
+        for col in df.columns
+    ]
+    return df
+
+def style_dataframe(df):
+    return df.style.set_properties(**{
+        'background-color': '#fdfdfd',
+        'color': '#111',
+        'border-color': '#ccc',
+        'font-size': '14px',
+        'text-align': 'left'
+    }).set_table_styles([
+        {'selector': 'th', 'props': [('background-color', '#003f5c'), ('color', 'white'), ('font-size', '15px')]}
+    ])
+
+
 def handle_model_response(response_text):
     if not response_text:
         return "I wasn’t able to generate a valid query for that question."
@@ -85,10 +104,6 @@ st.markdown("---")
 st.markdown("### Read Me")
 st.page_link("pages/how_to_use.py", label="❓ How to Use")
 
-
-
-
-
 # Load schema and prompt template
 schema_str = load_schema()
 prompt_template = load_prompt_template()
@@ -107,8 +122,10 @@ if submit and nl_query:
         conn = psycopg2.connect(**DB_PARAMS)
         df_result = pd.read_sql_query(sql_query, conn)
         conn.close()
+        df_result = title_case_columns(df_result)
         st.success("✅ Query successful!")
         st.dataframe(df_result)
+
     except Exception as e:
         st.error(f"❌ Error running PostgreSQL query: {e}")
 

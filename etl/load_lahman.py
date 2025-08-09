@@ -61,6 +61,8 @@ def load_csv_to_table(filename, conn, valid_playerids=None):
         COLUMN_RENAMES = {
             "2b": "doubles",
             "3b": "triples",
+            "2B": "doubles",
+            "3B": "triples",
             # Add more if needed
         }
 
