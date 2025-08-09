@@ -20,6 +20,10 @@ IMPORTANT INSTRUCTIONS:
 active players
 - When handling request involving stats from this year all players in the final answer must be playing this year
 
+SQL Syntax
+-Window functions are not allowed in WHERE clauses
+- Please be sure to track your naming conventions all the way through to avoid typos
+
 ### Source Preference:
 - FanGraphs tables for recent or single-season stats.
 - Lahman tables for career or long-term stats.
