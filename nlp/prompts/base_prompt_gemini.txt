@@ -18,6 +18,7 @@ IMPORTANT INSTRUCTIONS:
 - If there are multiple players tied for the lsat place on a requested list please include all of them
 - The Lahman tables lag a year behind the current year, please use fangraphs for any requests involving this year and/or
 active players
+- When handling request involving stats from this year all players in the final answer must be playing this year
 
 ### Source Preference:
 - FanGraphs tables for recent or single-season stats.
