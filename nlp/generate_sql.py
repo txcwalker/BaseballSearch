@@ -53,8 +53,14 @@ def load_prompt_template():
         return f.read()
 
 # Function to build the prompt based on the input
-def build_prompt(nl_query, schema_str, prompt_template):
-    return prompt_template.format(schema=schema_str.strip(), query=nl_query.strip())
+def build_prompt(nl_query, schema_str, prompt_template, season, current_year=CURRENT_YEAR):
+    return prompt_template.format(
+        schema=schema_str.strip(),
+        query=nl_query.strip(),
+        CURRENT_YEAR=current_year,
+        REQUESTED_SEASON=season
+    )
+
 
 # Fetching Gemini API Key
 def load_gemini_key():
@@ -104,19 +110,53 @@ def get_sql_from_gemini(prompt):
 #     return response.choices[0].message.content.strip()
 
 # Function to handle erroneous requests
-def handle_model_response(response_text):
-    # If the model follows instructions, return directly
-    if response_text.startswith("Unfortunately I currently do not have access"):
-        return response_text
-    if response_text.startswith("I can only answer baseball questions."):
-        return response_text
+def handle_model_response(response_text: str | None, season: int):
+    """
+    Validates the model output and decides whether to proceed, reprompt, or surface a user-facing message.
 
-    # Optional: fail safe — no SQL present
-    if "SELECT" not in response_text.upper():
+    Returns:
+      - None  → looks like valid SQL; go ahead and execute
+      - "__REPROMPT__" → model wrongly claimed "future" for CURRENT_YEAR; gently reprompt
+      - str message → a user-facing error/refusal string to display (do NOT execute)
+    """
+    text = (response_text or "").strip()
+    if not text:
         return "I wasn’t able to generate a valid query for that question."
 
-    # Otherwise, return the SQL
+    lo = text.lower()
+
+    # Known refusal/canned messages you want to surface AS-IS
+    refusal_markers = (
+        "i can only answer baseball questions",
+        "unfortunately i currently do not have access",
+        "i don’t have future-season data",
+        "i don't have future-season data",
+        "cannot provide statistics for",
+        "do not have access to future",
+    )
+    if any(m in lo for m in refusal_markers):
+        # If it's the current year but the model thinks it's "future", ask to reprompt
+        if season == CURRENT_YEAR and ("future" in lo or "future-season" in lo):
+            return "__REPROMPT__"
+        return text  # surface the refusal message
+
+    # Some models prepend prose/markdown. Bail if it doesn't look like SQL at all.
+    # Accept common SQL starters beyond SELECT (CTEs, EXPLAIN, etc.).
+    looks_sql = (
+        "select " in lo
+        or lo.startswith("with ")
+        or lo.startswith("explain ")
+        or lo.startswith("create view ")
+        or lo.startswith("insert into ")
+        or lo.startswith("update ")
+        or lo.startswith("delete from ")
+    )
+    if not looks_sql:
+        return "I wasn’t able to generate a valid query for that question."
+
+    # Passed checks → treat as executable SQL
     return None
+
 
 
 def main():
@@ -125,15 +165,19 @@ def main():
     parser.add_argument("query", help="Natural language query")
     args = parser.parse_args()
 
+    # NEW: resolve “this year”, explicit years, etc.
+    norm_q, season = normalize_query(args.query)
+
     schema_str = load_schema()
     prompt_template = load_prompt_template()
-    full_prompt = build_prompt(args.query, schema_str, prompt_template)
+    full_prompt = build_prompt(norm_q, schema_str, prompt_template, season)
 
     print("\n--- Prompt Sent to Gemini ---\n")
     print(full_prompt)
     print("\n--- SQL Output ---\n")
     sql = get_sql_from_gemini(full_prompt)
     print(sql)
+
 
 if __name__ == "__main__":
     main()
