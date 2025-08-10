@@ -6,6 +6,30 @@ import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 
+import re
+from datetime import date
+
+CURRENT_YEAR = date.today().year
+
+def extract_season(user_q: str) -> int | None:
+    # explicit year
+    m = re.search(r'\b(19|20)\d{2}\b', user_q)
+    if m:
+        return int(m.group(0))
+    # phrases → current year
+    if re.search(r'\b(this year|current year|ytd|so far)\b', user_q, re.I):
+        return CURRENT_YEAR
+    return None
+
+def normalize_query(user_q: str) -> tuple[str, int]:
+    season = extract_season(user_q)
+    if season is None:
+        season = CURRENT_YEAR  # default to current year (your DB has YTD)
+    # strip trailing punctuation to avoid brittle guards
+    q = user_q.strip().rstrip("?.! ")
+    return q, season
+
+
 # Functions to load the schema and prompt to be provided to the model and the direction it will take to write its queries
 # The schema_description tells it exactly what tables exist in the database along with their corresponding
 # variables. Addtionally there a few small dictionaries to help the model sort through abbreviations and AL v NL
