@@ -1,103 +1,642 @@
 Your PostgreSQL database contains the following tables:
 
-1. people(playerid, birthyear, birthmonth, birthday, birthcountry, birthstate, birthcity,
-   deathyear, deathmonth, deathday, deathcountry, deathstate, deathcity,
-   namefirst, namelast, namegiven, weight, height, bats, throws,
-   debut, finalgame, retroid, bbrefid)
+1. people
+Description: Biographical information for each player
 
-2. teamsfranchises(franchid, franchname, active, naassoc)
+playerid (text) – Lahman player ID.
+birthyear (integer) – Birth year.
+birthmonth (integer) – Birth month (1–12).
+birthday (integer) – Birth day (1–31).
+birthcountry (text) – Country of birth.
+birthstate (text) – State/province of birth.
+birthcity (text) – City of birth.
+deathyear (integer) – Death year.
+deathmonth (integer) – Death month (1–12).
+deathday (integer) – Death day (1–31).
+deathcountry (text) – Country of death.
+deathstate (text) – State/province of death.
+deathcity (text) – City of death.
+namefirst (text) – First name.
+namelast (text) – Last name.
+namegiven (text) – Given name/aliases.
+weight (integer) – Playing weight (lbs).
+height (integer) – Height (inches).
+bats (text) – Batting side (R/L/S).
+throws (text) – Throwing hand (R/L).
+debut (date) – MLB debut date.
+finalgame (date) – Final MLB game date.
+retroid (text) – RetroSheet ID.
+bbrefid (text) – Baseball-Reference ID.
 
-3. teams(yearid, lgid, teamid, franchid, divid, rank, g, ghome, w, l, divwin, wcwin,
-   lgwin, wswin, r, ab, h, doubles, triples, hr, bb, so, sb, cs, hbp, sf, ra, er, era,
-   cg, sho, sv, ipouts, ha, hra, bba, soa, e, dp, fp, name, park, attendance,
-   bpf, ppf, teamidbr, teamidlahman45, teamidretro)
 
-4. parks(parkkey, parkname, parkalias, city, state, country)
+2. teamsfranchises
+Description: Franchise level meta data
+franchid (text) – Franchise ID.
+franchname (text) – Franchise name.
+active (text) – ‘Y’ if active, else ‘N’.
+naassoc (text) – Historical NA association.
 
-5. batting(playerid, yearid, stint, teamid, lgid, g, ab, r, h, doubles, triples, hr, rbi,
-   sb, cs, bb, so, ibb, hbp, sh, sf, gidp)
 
-6. pitching(playerid, yearid, stint, teamid, lgid, w, l, g, gs, cg, sho, sv, ipouts, h,
-   er, hr, bb, so, baopp, era, ibb, wp, hbp, bk, bfp, gf, r, sh, sf, gidp)
+3. teams
+Description: Team Season Totals and context
+yearid (integer) – Season year.
+lgid (text) – League ID (AL/NL/etc.).
+teamid (text) – Team abbreviation.
+franchid (text) – Franchise ID.
+divid (text) – Division ID.
+rank (integer) – Division rank.
+g (integer) – Games played.
+ghome (integer) – Home games.
+w (integer) – Wins.
+l (integer) – Losses.
+divwin (text) – Won division (Y/N).
+wcwin (text) – Won wild card (Y/N).
+lgwin (text) – Won pennant (Y/N).
+wswin (text) – Won World Series (Y/N).
+r (integer) – Runs scored.
+ab (integer) – At-bats.
+h (integer) – Hits.
+doubles (integer) – Doubles.
+triples (integer) – Triples.
+hr (integer) – Home runs.
+bb (integer) – Walks.
+so (integer) – Strikeouts.
+sb (integer) – Stolen bases.
+cs (integer) – Caught stealing.
+hbp (integer) – Hit by pitch.
+sf (integer) – Sacrifice flies.
+ra (integer) – Runs allowed.
+er (integer) – Earned runs allowed.
+era (numeric) – Team ERA.
+cg (integer) – Complete games.
+sho (integer) – Shutouts.
+sv (integer) – Saves.
+ipouts (integer) – Outs recorded (team).
+ha (integer) – Hits allowed.
+hra (integer) – Home runs allowed.
+bba (integer) – Walks allowed.
+soa (integer) – Strikeouts recorded.
+e (integer) – Errors committed.
+dp (integer) – Double plays turned.
+fp (numeric) – Fielding percentage.
+name (text) – Team name.
+park (text) – Park name.
+attendance (integer) – Home attendance.
+bpf (integer) – Batting park factor.
+ppf (integer) – Pitching park factor.
+teamidbr (text) – BR team ID.
+teamidlahman45 (text) – Legacy team ID.
+teamidretro (text) – RetroSheet team ID.
 
-7. fielding(playerid, yearid, stint, teamid, lgid, pos, g, gs, innouts, po, a, e, dp,
-   pb, wp, sb, cs, zr)
 
-8. fieldingof(playerid, yearid, stint, glf, gcf, grf)
+4. parks
+Description: Park directory
+parkkey (text) – Park key/ID.
+parkname (text) – Primary park name.
+parkalias (text) – Alternate names.
+city (text) – City.
+state (text) – State/province.
+country (text) – Country.
 
-9. fieldingofsplit(playerid, yearid, stint, teamid, lgid, pos, g, gs, innouts, po, a, e,
-   dp, pb, wp, sb, cs, zr)
 
-10. appearances(yearid, teamid, lgid, playerid, g_all, gs, g_batting, g_defense,
-    g_p, g_c, g_1b, g_2b, g_3b, g_ss, g_lf, g_cf, g_rf, g_of, g_dh, g_ph, g_pr)
+5. batting
+Description: Player Batting season totals
+playerid (text) – Player ID.
+yearid (integer) – Season year.
+stint (integer) – Stint index for trades.
+teamid (text) – Team abbreviation.
+lgid (text) – League ID.
+g (integer) – Games.
+ab (integer) – At-bats.
+r (integer) – Runs.
+h (integer) – Hits.
+doubles (integer) – Doubles.
+triples (integer) – Triples.
+hr (integer) – Home runs.
+rbi (integer) – Runs batted in.
+sb (integer) – Stolen bases.
+cs (integer) – Caught stealing.
+bb (integer) – Walks.
+so (integer) – Strikeouts.
+ibb (integer) – Intentional walks.
+hbp (integer) – Hit by pitch.
+sh (integer) – Sacrifice hits (bunts).
+sf (integer) – Sacrifice flies.
+gidp (integer) – Grounded into double play.
 
-11. managers(playerid, yearid, teamid, lgid, inseason, g, w, l, rank, plyrmgr)
 
-12. allstarfull(playerid, yearid, gamenum, gameid, teamid, lgid, gp, startingpos)
+6. pitching
+Description: Player pithcing season totals
 
-13. battingpost(yearid, round, playerid, teamid, lgid, g, ab, r, h, doubles, triples, hr,
-    rbi, sb, cs, bb, so, ibb, hbp, sh, sf, gidp)
+playerid (text) – Player ID.
+yearid (integer) – Season year.
+stint (integer) – Stint index for trades.
+teamid (text) – Team abbreviation.
+lgid (text) – League ID.
+w (integer) – Wins.
+l (integer) – Losses.
+g (integer) – Games pitched.
+gs (integer) – Games started.
+cg (integer) – Complete games.
+sho (integer) – Shutouts.
+sv (integer) – Saves.
+ipouts (integer) – Outs pitched.
+h (integer) – Hits allowed.
+er (integer) – Earned runs.
+hr (integer) – Home runs allowed.
+bb (integer) – Walks allowed.
+so (integer) – Strikeouts.
+baopp (numeric) – Opponent batting average.
+era (numeric) – Earned run average.
+ibb (integer) – Intentional walks.
+wp (integer) – Wild pitches.
+hbp (integer) – Hit batters.
+bk (integer) – Balks.
+bfp (integer) – Batters faced.
+gf (integer) – Games finished.
+r (integer) – Runs allowed.
+sh (integer) – Sac bunts allowed.
+sf (integer) – Sac flies allowed.
+gidp (integer) – GIDP induced.
 
-14. pitchingpost(playerid, yearid, round, teamid, lgid, w, l, g, gs, cg, sho, sv,
-    ipouts, h, er, hr, bb, so, baopp, era, ibb, wp, hbp, bk, bfp, gf, r, sh,
-    sf, gidp)
 
-15. fieldingpost(playerid, yearid, teamid, lgid, round, pos, g, gs, innouts, po, a, e,
-    dp, tp, pb, sb, cs)
+7. fielding
+Description: Player fielding season totals
 
-16. seriespost(yearid, round, teamidwinner, lgidwinner, teamidloser, lgidloser,
-    wins, losses, ties)
+playerid (text) – Player ID.
+yearid (integer) – Season year.
+stint (integer) – Stint index for trades.
+teamid (text) – Team abbreviation.
+lgid (text) – League ID.
+pos (text) – Fielding position (e.g., 1B).
+g (integer) – Games at position.
+gs (integer) – Games started.
+innouts (integer) – Defensive outs played.
+po (integer) – Putouts.
+a (integer) – Assists.
+e (integer) – Errors.
+dp (integer) – Double plays.
+pb (integer) – Passed balls (catcher).
+wp (integer) – Wild pitches (catcher).
+sb (integer) – SB allowed (catcher).
+cs (integer) – CS by catcher.
+zr (numeric) – Zone rating (legacy).
 
-17. homegames(yearkey, leaguekey, teamkey, parkkey, spanfirst, spanlast, games,
-    openings, attendance)
 
-18. managershalf(playerid, yearid, teamid, lgid, inseason, half, g, w, l, rank)
+8. fieldingof
+Description: OF games split by LF/CF/RF totals
+playerid (text) – Player ID.
+yearid (integer) – Season year.
+stint (integer) – Stint index.
+glf (integer) – Games in LF.
+gcf (integer) – Games in CF.
+grf (integer) – Games in RF.
 
-19. teamshalf(yearid, lgid, teamid, half, divid, divwin, rank, g, w, l)
 
-20. awardsmanagers(playerid, awardid, yearid, lgid, tie, notes)
+9. fieldingofsplit
+Description: OF fielding by position with counting stats
 
-21. awardsplayers(playerid, awardid, yearid, lgid, tie, notes)
+playerid (text) – Player ID.
+yearid (integer) – Season year.
+stint (integer) – Stint index.
+teamid (text) – Team abbreviation.
+lgid (text) – League ID.
+pos (text) – LF/CF/RF.
+g (integer) – Games.
+gs (integer) – Games started.
+innouts (integer) – Defensive outs.
+po (integer) – Putouts.
+a (integer) – Assists.
+e (integer) – Errors.
+dp (integer) – Double plays.
+pb (integer) – Passed balls (N/A outfield).
+wp (integer) – Wild pitches (N/A outfield).
+sb (integer) – SB allowed (N/A outfield).
+cs (integer) – CS by catcher (N/A outfield).
+zr (numeric) – Zone rating (legacy).
 
-22. awardssharemanagers(awardid, yearid, lgid, playerid, pointswon, pointsmax, votesfirst)
 
-23. awardsshareplayers(awardid, yearid, lgid, playerid, pointswon, pointsmax, votesfirst)
+10. appearances
+Description: per season games by role/position
 
-24. halloffame(playerid, yearid, votedby, ballots, needed, votes, inducted, category, needed_note)
+yearid (integer) – Season year.
+teamid (text) – Team abbreviation.
+lgid (text) – League ID.
+playerid (text) – Player ID.
+g_all (integer) – Total games.
+gs (integer) – Games started.
+g_batting (integer) – Games batted.
+g_defense (integer) – Games on defense.
+g_p … g_pr (integers) – Games at each role: P, C, 1B, 2B, 3B, SS, LF, CF, RF, OF, DH, PH, PR.
 
-25. collegeplaying(playerid, schoolid, yearid)
 
-26. schools(schoolid, school_name, schoolcity, schoolstate, schoolcountry)
+11. managers
+Description: Manager season records
 
-27. salaries(yearid, teamid, lgid, playerid, salary)
+playerid (text) – Manager’s player ID.
+yearid (integer) – Season year.
+teamid (text) – Team abbreviation.
+lgid (text) – League ID.
+inseason (integer) – Managerial stint count.
+g (integer) – Games managed.
+w (integer) – Wins.
+l (integer) – Losses.
+rank (integer) – Division rank.
+plyrmgr (text) – Player-manager flag (Y/N).
 
-28. fangraphs_batting_lahman_like(idfg, season, name, team, g, ab, pa, h, singles, doubles, triples, hr, r, rbi, bb, ibb, so, hbp, sf, sh, sb, cs)
 
-29. fangraphs_batting_standard_ratios(idfg, season, name, team, avg, obp, slg, ops, iso, babip, bb_pc, k_pc, bb_k, gdp)
+12. allstarfull
+Description: All-Star game rosters and starters
 
-30. fangraphs_batting_advanced(idfg, season, name, team, woba, wraa, wrc, wrc_plus, war, rar, bat, fld, rep, pos, off, def, dol)
+playerid (text) – Player ID.
+yearid (integer) – Season year.
+gamenum (integer) – All-Star game number.
+gameid (text) – Game identifier.
+teamid (text) – All-Star team.
+lgid (text) – League ID.
+gp (integer) – Played in game (0/1).
+startingpos (integer) – Starting position number.
 
-31. fangraphs_plate_discipline(idfg, season, name, team, o_swing_pc, z_swing_pc, swing_pc, o_contact_pc, z_contact_pc, contact_pc, zone_pc, f_strike_pc, swstr_pc, cstr_pc, csw_pc, wpa, wpa_li, clutch, re24, rew, pli, phli, ph)
 
-32. fangraphs_batted_ball(idfg, season, name, team, gb, fb, ld, iffb, gb_fb, ld_pc, gb_pc, fb_pc, iffb_pc, hr_fb, ifh, ifh_pc, bu, buh, buh_pc, pull_pc, cent_pc, oppo_pc, soft_pc, med_pc, hard_pc, hardhit, hardhit_pc, ev, la, barrels, barrel_pc, maxev, tto_pc)
+13. battingpost
+Description: Postseason batting totals
 
-33. fangraphs_baserunning_fielding(idfg, season, name, team, bsr, spd, wsb, ubr, wgdp)
+yearid (integer) – Season year.
+round (text) – Postseason round.
+playerid (text) – Player ID.
+teamid (text) – Team abbreviation.
+lgid (text) – League ID.
+g, ab, r, h, doubles, triples, hr, rbi, sb, cs, bb, so, ibb, hbp, sh, sf, gidp – Same as regular-season definitions.
 
-34. fangraphs_batter_pitch_type_summary(idfg, season, name, team, fb_pc, fbv, sl_pc, slv, ch_pc, chv, cb_pc, cbv, sf_pc, sfv, ct_pc, ctv, kn_pc, knv, xx_pc, po_pc, wfb, wsl, wch, wcb, wsf, wct, wkn, wfb_c, wsl_c, wch_c, wcb_c, wsf_c, wct_c, wkn_c)
 
-35. fangraphs_pitching_lahman_like(idfg, season, name, team, w, l, g, gs, cg, sho, sv, ip, h, r, er, hr, bb, so, hbp, wp, bk, tbf)
+14. pitchingpost
+Description: Postseason pitching totoals
 
-36. fangraphs_pitching_standard_ratios(idfg, season, name, team, era, k_9, bb_9, k_bb, h_9, hr_9, avg, whip, babip, lob_pc)
+playerid, yearid, round, teamid, lgid – Identifiers.
+w, l, g, gs, cg, sho, sv, ipouts, h, er, hr, bb, so, baopp, era, ibb, wp, hbp, bk, bfp, gf, r, sh, sf, gidp – Same as regular-season definitions.
 
-37. fangraphs_pitching_advanced(idfg, season, name, team, war, fip, xfip, siera, era_minus, fip_minus, xfip_minus, rar, dollars, ra9_war)
 
-38. fangraphs_pitching_plate_discipline(idfg, season, name, team, o_swing_pc, z_swing_pc, swing_pc, o_contact_pc, z_contact_pc, contact_pc, zone_pc, f_strike_pc, swstr_pc, cstr_pc, csw_pc)
+15. fieldingpost
+Description: Postseason Fielding totals
 
-39. fangraphs_pitching_batted_ball(idfg, season, name, team, gb_fb, ld_pc, gb_pc, fb_pc, iffb_pc, hr_fb, pull_pc, cent_pc, oppo_pc, soft_pc, med_pc, hard_pc, ev, la, barrels, barrel_pc, maxev, hardhit, hardhit_pc, tto_pc)
+playerid, yearid, teamid, lgid, round, pos – Identifiers.
+g, gs, innouts, po, a, e, dp, tp, pb, sb, cs – Same meanings as regular season.
 
-40. fangraphs_pitching_pitch_type_summary(idfg, season, name, team, fb_pc, fbv, sl_pc, slv, ct_pc, ctv, cb_pc, cbv, ch_pc, chv, sf_pc, sfv, kn_pc, knv, wfb, wsl, wct, wcb, wch, wsf, wkn, wfb_c, wsl_c, wct_c, wcb_c, wch_c, wsf_c, wkn_c)
+
+16. seriespost
+Description: Postseason series outcomes
+
+yearid (integer) – Season year.
+round (text) – Series round.
+teamidwinner (text) – Winning team.
+lgidwinner (text) – Winner’s league.
+teamidloser (text) – Losing team.
+lgidloser (text) – Loser’s league.
+wins (integer) – Series wins.
+losses (integer) – Series losses.
+ties (integer) – Series ties (historical).
+
+
+17. homegames
+Description: Team home game spans in parks
+
+yearkey (integer) – Year key.
+leaguekey (text) – League key.
+teamkey (text) – Team key.
+parkkey (text) – Park key.
+spanfirst (date) – First date in span.
+spanlast (date) – Last date in span.
+games (integer) – Games in span.
+openings (integer) – Opening dates.
+attendance (integer) – Attendance in span.
+
+
+18. managershalf
+Description: Half season manager records
+
+playerid, yearid, teamid, lgid – Identifiers.
+inseason (integer) – Managerial stint count.
+half (integer) – First/second half.
+g, w, l, rank – Half-season record.
+
+
+19. teamshalf
+Description: Half-season team records
+
+yearid, lgid, teamid – Identifiers.
+half (integer) – First/second half.
+divid (text) – Division.
+divwin (text) – Division winner (Y/N).
+rank (integer) – Half-season rank.
+g (integer) – Games.
+w (integer) – Wins.
+l (integer) – Losses.
+
+
+20. awardsmanagers
+Description: Awards given to managers
+
+playerid (text) – Manager’s player ID.
+awardid (text) – Award name.
+yearid (integer) – Year awarded.
+lgid (text) – League.
+tie (text) – Award tie flag.
+notes (text) – Notes.
+
+
+21. awardsplayers
+Description: Awards given to players
+
+playerid (text) – Player ID.
+awardid (text) – Award name.
+yearid (integer) – Year awarded.
+lgid (text) – League.
+tie (text) – Tie flag.
+notes (text) – Notes.
+
+
+22. awardssharemanagers
+Description: Manager award voting shares
+
+awardid (text) – Award name.
+yearid (integer) – Year.
+lgid (text) – League.
+playerid (text) – Manager’s player ID.
+pointswon (integer) – Points received.
+pointsmax (integer) – Max possible points.
+votesfirst (integer) – First-place votes.
+
+
+23. awardsshareplayers
+Description: Player award voting shares
+
+awardid, yearid, lgid, playerid – Identifiers.
+pointswon, pointsmax, votesfirst – Voting tallies.
+
+
+24. halloffame
+Description: Hall of Fame voting and induction
+
+playerid (text) – Player ID.
+yearid (integer) – Ballot year.
+votedby (text) – Voting body.
+ballots (integer) – Ballots cast.
+needed (integer) – Votes needed.
+votes (integer) – Votes earned.
+inducted (text) – Inducted flag (Y/N).
+category (text) – Player/Manager/Ump/etc.
+needed_note (text) – Notes on threshold.
+
+
+25. collegeplaying
+Description: Player college affiliations by year
+
+playerid (text) – Player ID.
+schoolid (text) – School ID.
+yearid (integer) – Season year.
+
+
+26. schools
+Description: School directory
+
+schoolid (text) – School ID (key).
+school_name (text) – School name.
+schoolcity (text) – City.
+schoolstate (text) – State/province.
+schoolcountry (text) – Country.
+
+
+27. salaries
+Description: Players salaries by team and year
+yearid (integer) – Season year.
+teamid (text) - team
+lgid (text) - league
+playerid (text) - PLayer ID
+salary (integer) - salary
+
+28. fangraphs_batting_lahman_like
+Description: Batting Counting stats aligned to Lahman
+
+idfg (integer) – FanGraphs player ID.
+season (integer) – Season year.
+name (text) – Player name.
+team (text) – Team abbreviation.
+g (integer) – Games.
+ab (integer) – At-bats.
+pa (integer) – Plate appearances (use for qualifiers).
+h (integer) – Hits.
+singles (integer) – Singles.
+doubles (integer) – Doubles.
+triples (integer) – Triples.
+hr (integer) – Home runs.
+r (integer) – Runs.
+rbi (integer) – Runs batted in.
+bb (integer) – Walks.
+ibb (integer) – Intentional walks.
+so (integer) – Strikeouts.
+hbp (integer) – Hit by pitch.
+sf (integer) – Sacrifice flies.
+sh (integer) – Sacrifice bunts.
+sb (integer) – Stolen bases.
+cs (integer) – Caught stealing.
+
+
+29. fangraphs_batting_standard_ratios
+Description: Common Batting ratio stats
+
+idfg, season, name, team – Identifiers.
+avg (numeric) – Batting average (H/AB).
+obp (numeric) – On-base percentage.
+slg (numeric) – Slugging percentage.
+ops (numeric) – OBP + SLG.
+iso (numeric) – Isolated power (SLG–AVG).
+babip (numeric) – Batting avg on balls in play.
+bb_pc (numeric) – Walk rate (BB/PA).
+k_pc (numeric) – Strikeout rate (SO/PA).
+bb_k (numeric) – Walk-to-strikeout ratio.
+gdp (integer) – Grounded into double plays.
+
+
+30. fangraphs_batting_advanced
+Description: Advanced value Metrics
+
+idfg, season, name, team – Identifiers.
+woba (numeric) – Weighted on-base average.
+wraa (numeric) – Weighted runs above average.
+wrc (numeric) – Weighted runs created.
+wrc_plus (integer) – wRC+ (park/league adj, 100=avg).
+war (numeric) – Wins above replacement (FG).
+rar (numeric) – Runs above replacement.
+bat (numeric) – Batting runs.
+fld (numeric) – Fielding runs.
+rep (numeric) – Replacement runs.
+pos (numeric) – Positional runs.
+off (numeric) – Bat+run value (bat+br).
+def (numeric) – Fielding+positional value.
+dol (numeric) – Dollar value estimate.
+
+
+31. fangraphs_plate_discipline
+Description: Hitting Swing/contact/zone rates and clutch
+
+idfg, season, name, team – Identifiers.
+o_swing_pc (numeric) – Swings at pitches outside zone.
+z_swing_pc (numeric) – Swings at pitches in zone.
+swing_pc (numeric) – Overall swing rate.
+o_contact_pc (numeric) – Contact on out-of-zone swings.
+z_contact_pc (numeric) – Contact on in-zone swings.
+contact_pc (numeric) – Overall contact rate.
+zone_pc (numeric) – Pitches in strike zone seen.
+f_strike_pc (numeric) – First-pitch strike rate.
+swstr_pc (numeric) – Swinging-strike rate.
+cstr_pc (numeric) – Called-strike rate.
+csw_pc (numeric) – Called + swinging strike rate.
+wpa (numeric) – Win probability added.
+wpa_li (numeric) – WPA / leverage index.
+clutch (numeric) – Situational performance index.
+re24 (numeric) – Runs vs average (24 states).
+rew (numeric) – Win expectancy runs.
+pli (numeric) – Average leverage index.
+phli (numeric) – PH leverage index.
+ph (integer) – Pinch-hit appearances.
+
+
+32. fangraphs_batted_ball
+Description: Batted Ball types, quality and direction
+
+idfg, season, name, team – Identifiers.
+gb, fyb, ld, iffb (integers) – ground balls/fly balls/line drives/infield fly balls.
+gb_fb (numeric) – GB/FB ratio.
+ld_pc, gb_pc, fyb_pc, iffb_pc (numeric) – line drive percentage, ground ball percentage, fly ball percentage, infield fly ball percentage
+hr_fb (numeric) – HR per fly ball.
+ifh (integer) – Infield hits.
+ifh_pc (numeric) – Infield hit rate.
+bu, buh (integers) – Bunts / bunt hits.
+buh_pc (numeric) – Bunt hit rate.
+pull_pc, cent_pc, oppo_pc (numeric) – Spray rates.
+soft_pc, med_pc, hard_pc (numeric) – Contact quality rates.
+hardhit (integer) – Hard-hit balls count.
+hardhit_pc (numeric) – Hard-hit rate.
+ev (numeric) – Avg exit velocity (mph).
+la (numeric) – Avg launch angle (deg).
+barrels (integer) – Barrel count.
+barrel_pc (numeric) – Barrel rate.
+maxev (numeric) – Max exit velocity (mph).
+tto_pc (numeric) – True outcomes rate (BB/SO/HR).
+
+
+33. fangraphs_baserunning_fielding
+Description: Base running and double play avoidance
+
+idfg, season, name, team – Identifiers.
+bsr (numeric) – Base running value.
+spd (numeric) – Speed score.
+wsb (numeric) – SB runs (wSB).
+ubr (numeric) – Baserunning runs (non-SB).
+wgdp (numeric) – Runs from avoiding GIDP.
+
+
+34. fangraphs_batter_pitch_type_summary
+Description: Hitters results by pitch types
+
+idfg, season, name, team – Identifiers.
+fb_pc, sl_pc, ch_pc, cb_pc, sf_pc, ct_pc, kn_pc, xx_pc, po_pc (numeric) – Pitch-type rates seen.
+fbv, slv, chv, cbv, sfv, ctv, knv (numeric) – Avg pitch velocities vs hitter.
+wfb, wsl, wch, wcb, wsf, wct, wkn (numeric) – Runs vs pitch types.
+wfb_c, wsl_c, wch_c, wcb_c, wsf_c, wct_c, wkn_c (numeric) – Runs/100 vs pitch types.
+
+
+35. fangraphs_pitching_lahman_like
+Description: Pitching Counting stats align to Lahman
+
+idfg, season, name, team – Identifiers.
+w, l, g, gs, cg, sho, sv – Wins/losses/uses.
+ip (numeric) – Innings pitched.
+h, r, er, hr – Hits/runs/ER/HR allowed.
+bb, so – Walks/strikeouts.
+hbp, wp, bk – HBP/WP/balks.
+tbf (integer) – Batters faced.
+
+
+36. fangraphs_pitching_standard_ratios
+Description: Common pitching ratio stats
+
+idfg, season, name, team – Identifiers.
+era (numeric) – Earned run average.
+k_9 (numeric) – Strikeouts per 9.
+bb_9 (numeric) – Walks per 9.
+k_bb (numeric) – Strikeout-to-walk ratio.
+h_9 (numeric) – Hits per 9.
+hr_9 (numeric) – HR per 9.
+avg (numeric) – Batting average against.
+whip (numeric) – (BB+H)/IP.
+babip (numeric) – BAbip allowed.
+lob_pc (numeric) – Left-on-base rate.
+
+
+37. fangraphs_pitching_advanced
+Description: Advanced pitcher value and estimators
+
+idfg, season, name, team – Identifiers.
+war (numeric) – Wins above replacement (FG).
+fip (numeric) – Fielding Independent Pitching.
+xfip (numeric) – Expected FIP (HR regressed).
+siera (numeric) – Skill-interactive ERA.
+era_minus (integer) – ERA- (lower is better).
+fip_minus (integer) – FIP- (lower is better).
+xfip_minus (integer) – xFIP- (lower is better).
+rar (numeric) – Runs above replacement.
+dollars (numeric) – Dollar value estimate.
+ra9_war (numeric) – WAR by RA9 framework.
+
+
+38. fangraphs_pitching_plate_discipline
+Description: Pitcher induced swing/contact/zone rates
+
+idfg, season, name, team – Identifiers.
+o_swing_pc, z_swing_pc, swing_pc – Swing rates allowed.
+o_contact_pc, z_contact_pc, contact_pc – Contact rates allowed.
+zone_pc (numeric) – Zone rate thrown.
+f_strike_pc (numeric) – First-pitch strike rate.
+swstr_pc (numeric) – Swinging-strike rate.
+cstr_pc (numeric) – Called-strike rate.
+csw_pc (numeric) – Called + swinging strike rate.
+
+
+39. fangraphs_pitching_batted_ball
+Description: Contact profile allowed by pitchers
+
+idfg, season, name, team – Identifiers.
+gb_fb (numeric) – GB/FB ratio.
+ld_pc, gb_pc, fyb_pc, iffb_pc (numeric) – line drive percentage, ground ball percentage, fly ball percentage, infield fly ball percentage
+hr_fb (numeric) – HR per fly ball.
+pull_pc, cent_pc, oppo_pc (numeric) – Spray rates allowed.
+soft_pc, med_pc, hard_pc (numeric) – Contact quality rates allowed.
+ev (numeric) – Avg exit velocity allowed.
+la (numeric) – Avg launch angle allowed.
+barrels (integer) – Barrels allowed.
+barrel_pc (numeric) – Barrel rate allowed.
+maxev (numeric) – Max EV allowed.
+hardhit (integer) – Hard-hit balls allowed.
+hardhit_pc (numeric) – Hard-hit rate allowed.
+tto_pc (numeric) – True outcomes rate allowed.
+
+
+40. fangraphs_pitching_pitch_type_summary
+Description: Pitch usage/velocity and results by pitch type
+
+idfg, season, name, team – Identifiers.
+fb_pc, sl_pc, ct_pc, cb_pc, ch_pc, sf_pc, kn_pc (numeric) – Pitch-type usage rates.
+fbv, slv, ctv, cbv, chv, sfv, knv (numeric) – Avg velocity by pitch.
+wfb, wsl, wct, wcb, wch, wsf, wkn (numeric) – Runs by pitch type.
+wfb_c, wsl_c, wct_c, wcb_c, wch_c, wsf_c, wkn_c (numeric) – Runs/100 by pitch type.
+
 
 41. lahman_fangraphs_bridge(playerid, idfg)
+Description: ID map between Lahman and Fangraphs
+
+playerid (text) – Lahman player ID.
+idfg (integer) – FanGraphs player ID.
 
 
 ---
@@ -105,105 +644,96 @@ Your PostgreSQL database contains the following tables:
 
 ## Franchise Abbreviation Lookup
 
-Each entry below maps a `team_abbr` to its `franchise_abbr` and includes the active years for that team. If no separate franchise abbreviation was provided, the `team_abbr` is used.
+Each entry below maps a `team_abbr` to its `franchise_abbr` and includes the active years for that team.
+    If no separate franchise abbreviation was provided, the `team_abbr` is used.
 
-### National League
+Team Abbreviation → Francise Abbreviation | Years Active | Team Name
 
-BSN → BSN    | 1876 – 1952 | Boston Braves
-MLN → ML1    | 1953 – 1965 | Milwaukee Braves
-ATL → ATL    | 1966 –      | Atlanta Braves
+BSN → BSN | 1876–1952 | Boston Braves
+MLN → ML1 | 1953–1965 | Milwaukee Braves
+ATL → ATL | 1966–      | Atlanta Braves
+CHC → CHN | 1876–      | Chicago Cubs
+CIN → CN1 | 1876–1880 | Cincinnati Reds
+CIN → CIN | 1890–      | Cincinnati Reds
+HAR → HAR | 1876–1877 | Hartford Dark Blues
+LOU → LS1 | 1876–1877 | Louisville Grays
+NYU → NY3 | 1876–1876 | New York Mutuals
+ATH → PHN | 1876–1876 | Philadelphia Athletics
+STL → SL3 | 1876–1877 | St. Louis Brown Stockings
+IND → IN1 | 1878–1878 | Indianapolis Blues
+MLG → ML2 | 1878–1878 | Milwaukee Grays
+PRO → PRO | 1878–1885 | Providence Grays
+BUF → BFN | 1879–1885 | Buffalo Bisons
+CLV → CL2 | 1879–1884 | Cleveland Blues
+SYR → SR1 | 1879–1879 | Syracuse Stars
+TRO → TRN | 1879–1882 | Troy Trojans
+WOR → WOR | 1880–1882 | Worcester Ruby Legs
+DTN → DTN | 1881–1888 | Detroit Wolverines
+NYG → NY1 | 1883–1957 | New York Giants
+SFG → SFN | 1958–      | San Francisco Giants
+PHI → PHI | 1883–      | Philadelphia Phillies
+SLM → SL5 | 1885–1886 | St. Louis Maroons
+KCN → KCN | 1886–1886 | Kansas City Cowboys
+WSN → WS8 | 1886–1889 | Washington Nationals
+IND → IN3 | 1887–1889 | Indianapolis Hoosiers
+PIT → PIT | 1887–      | Pittsburgh Pirates
+CLV → CL4 | 1889–1899 | Cleveland Spiders
+BRO → BRO | 1890–1957 | Brooklyn Dodgers
+LAD → LAN | 1958–2000 | Los Angeles Dodgers
+LAN → LAN | 2001–      | Los Angeles Dodgers
+BLN → BLN | 1892–1899 | Baltimore Orioles
+LOU → LS3 | 1892–1899 | Louisville Colonels
+STL → SLN | 1892–      | St. Louis Cardinals
+WSN → WSN | 1892–1899 | Washington Senators
+HOU → HOU | 1962–2012 | Houston Astros
+NYM → NYN | 1962–      | New York Mets
+MON → MON | 1969–2001 | Montreal Expos
+SDP → SDN | 1969–      | San Diego Padres
+COL → COL | 1993–      | Colorado Rockies
+FLA → FLO | 1993–2011 | Florida Marlins
+FLA → MIA | 2012–      | Miami Marlins
+ARI → ARI | 1998–      | Arizona Diamondbacks
+MIL → MIL | 1998–      | Milwaukee Brewers
 
-CHC → CHN    | 1876 –      | Chicago Cubs
-
-CIN → CN1    | 1876 – 1880 | Cincinnati Reds
-CIN → CIN    | 1890 –      | Cincinnati Reds
-
-HAR → HAR    | 1876 – 1877 | Hartford Dark Blues
-LOU → LS1    | 1876 – 1877 | Louisville Grays
-NYU → NY3    | 1876 – 1876 | New York Mutuals
-ATH → PHN    | 1876 – 1876 | Philadelphia Athletics
-STL → SL3    | 1876 – 1877 | St. Louis Brown Stockings
-IND → IN1    | 1878 – 1878 | Indianapolis Blues
-MLG → ML2    | 1878 – 1878 | Milwaukee Grays
-PRO → PRO    | 1878 – 1885 | Providence Grays
-BUF → BFN    | 1879 – 1885 | Buffalo Bisons
-CLV → CL2    | 1879 – 1884 | Cleveland Blues
-SYR → SR1    | 1879 – 1879 | Syracuse Stars
-TRO → TRN    | 1879 – 1882 | Troy Trojans
-WOR → WOR    | 1880 – 1882 | Worcester Ruby Legs
-DTN → DTN    | 1881 – 1888 | Detroit Wolverines
-NYG → NY1    | 1883 – 1957 | New York Giants
-SFG → SFN    | 1958 –      | San Francisco Giants
-PHI → PHI    | 1883 –      | Philadelphia Phillies
-SLM → SL5    | 1885 – 1886 | St. Louis Maroons
-KCN → KCN    | 1886 – 1886 | Kansas City Cowboys
-WSN → WS8    | 1886 – 1889 | Washington Nationals
-IND → IN3    | 1887 – 1889 | Indianapolis Hoosiers
-PIT → PIT    | 1887 –      | Pittsburgh Pirates
-CLV → CL4    | 1889 – 1899 | Cleveland Spiders
-BRO → BRO    | 1890 – 1957 | Brooklyn Dodgers
-LAD → LAN    | 1958 – 2000 | Los Angeles Dodgers
-LAN → LAN    | 2001 –      | Los Angeles Dodgers
-BLN → BLN    | 1892 – 1899 | Baltimore Orioles
-LOU → LS3    | 1892 – 1899 | Louisville Colonels
-STL → SLN    | 1892 –      | St. Louis Cardinals
-WSN → WSN    | 1892 – 1899 | Washington Senators
-HOU → HOU    | 1962 – 2012 | Houston Astros
-NYM → NYN    | 1962 –      | New York Mets
-MON → MON    | 1969 – 2001 | Montreal Expos
-SDP → SDN    | 1969 –      | San Diego Padres
-COL → COL    | 1993 –      | Colorado Rockies
-FLA → FLO    | 1993 – 2011 | Florida Marlins
-FLA → MIA    | 2012 –      | Florida Marlins
-ARI → ARI    | 1998 –      | Arizona Diamondbacks
-MIL → MIL    | 1998 –      | Milwaukee Brewers
 
 ### American League
 
-BLA → BLA    | 1901 – 1902 | Baltimore Orioles
-NYY → NYA    | 1903 –      | New York Yankees
+Team Abbreviation → Franchise Abbreviation | Years Active | Team Name
+BLA → BLA | 1901–1902 | Baltimore Orioles
+NYY → NYA | 1903–      | New York Yankees
+BOS → BOS | 1901–      | Boston Red Sox
+CHW → CHA | 1901–      | Chicago White Sox
+CLE → CLE | 1901–2021 | Cleveland Indians
+CLE → CLE | 2022–      | Cleveland Guardians
+DET → DET | 1901–      | Detroit Tigers
+MLA → MLA | 1901–1901 | Milwaukee Brewers
+SLB → SLA | 1902–1953 | St. Louis Browns
+BAL → BAL | 1954–      | Baltimore Orioles
+PHA → PHA | 1901–1954 | Philadelphia Athletics
+KCA → KC1 | 1955–1967 | Kansas City Athletics
+OAK → OAK | 1968–      | Oakland Athletics
+WSH → WS1 | 1901–1960 | Washington Senators
+MIN → MIN | 1961–      | Minnesota Twins
+LAA → LAA | 1961–1964 | Los Angeles Angels
+CAL → CAL | 1965–1996 | California Angels
+ANA → ANA | 1997–2001 | Anaheim Angels
+WSA → WS2 | 1961–1971 | Washington Senators
+TEX → TEX | 1972–      | Texas Rangers
+HOU → HOU | 2013–      | Houston Astros
+KCR → KCA | 1969–      | Kansas City Royals
+SEP → SE1 | 1969–1969 | Seattle Pilots
+MIL → ML4 | 1970–1997 | Milwaukee Brewers
+SEA → SEA | 1977–      | Seattle Mariners
+TOR → TOR | 1977–      | Toronto Blue Jays
+TBD → TBA | 1998–2007 | Tampa Bay Devil Rays
+TBD → TBA | 2008–      | Tampa Bay Rays
 
-BOS → BOS    | 1901 –      | Boston Red Sox
-CHW → CHA    | 1901 –      | Chicago White Sox
-CLE → CLE    | 1901 – 2021 | Cleveland Indians
-CLE → CLE    | 2022 –      | Cleveland Indians
-DET → DET    | 1901 –      | Detroit Tigers
-
-MLA → MLA    | 1901 – 1901 | Milwaukee Brewers
-SLB → SLA    | 1902 – 1953 | St. Louis Browns
-BAL → BAL    | 1954 –      | Baltimore Orioles
-
-PHA → PHA    | 1901 – 1954 | Philadelphia Athletics
-KCA → KC1    | 1955 – 1967 | Kansas City Athletics
-OAK → OAK    | 1968 –      | Oakland Athletics
-
-WSH → WS1    | 1901 – 1960 | Washington Nationals
-MIN → MIN    | 1961 –      | Minnesota Twins
-
-LAA → LAA    | 1961 – 1964 | Los Angeles Angels
-CAL → CAL    | 1965 – 1996 | California Angels
-ANA → ANA    | 1997 – 2001 | Anaheim Angels
-
-WSA → WS2    | 1961 – 1971 | Washington Senators
-TEX → TEX    | 1972 –      | Texas Rangers
-HOU → HOU    | 2013 –      | Houston Astros
-
-KCR → KCA    | 1969 –      | Kansas City Royals
-SEP → SE1    | 1969 – 1969 | Seattle Pilots
-MIL → ML4    | 1970 – 1997 | Milwaukee Brewers
-
-SEA → SEA    | 1977 –      | Seattle Mariners
-TOR → TOR    | 1977 –      | Toronto Blue Jays
-TBD → TBA    | 1998 – 2007 | Tampa Bay Devil Rays
-TBD → TBA    | 2008 –      | Tampa Bay Rays
 
 
 ### Country Abbreviations
-- USA: United States
-- P.R.: Puerto Rico
-- D.R.: Dominican Republic
-
-
+USA – United States
+P.R. – Puerto Rico
+D.R. – Dominican Republic
 
 
 Note: All `playerid` columns reference the `people` table. Composite primary keys are used where appropriate, typically across (playerid, yearid, stint) or (yearid, teamid).

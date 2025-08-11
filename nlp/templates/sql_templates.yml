@@ -1,0 +1,153 @@
+team_ops_fangraphs:
+  desc: Team OPS (aggregate hitters; exclude TOT/---).
+  params: [year, limit]
+  param_types: {year: int, limit: int}
+  defaults: {year: "!season_from_query", limit: 30}
+  patterns:
+    - '(?i)\bteam\b.*\bops\b(?:.*?(?P<year>(?:18|19|20|21)\d{2}))?(?:.*?\btop\s+(?P<limit>\d+))?'
+  sql: |
+    WITH agg AS (
+      SELECT
+        fbl.season,
+        fbl.team,
+        SUM(fbl.h)        AS h,
+        SUM(fbl.ab)       AS ab,
+        SUM(fbl.bb)       AS bb,
+        SUM(fbl.hbp)      AS hbp,
+        SUM(fbl.sf)       AS sf,
+        SUM(fbl.singles)  AS singles,
+        SUM(fbl.doubles)  AS doubles,
+        SUM(fbl.triples)  AS triples,
+        SUM(fbl.hr)       AS hr
+      FROM fangraphs_batting_lahman_like fbl
+      WHERE fbl.season = {{year}}
+        AND fbl.team NOT IN ('TOT','---')
+      GROUP BY fbl.season, fbl.team
+    )
+    SELECT
+      a.team,
+      a.season,
+      ROUND(((a.h::numeric + a.bb + a.hbp)
+             / NULLIF(a.ab + a.bb + a.hbp + a.sf, 0))::numeric, 3) AS obp,
+      ROUND(((a.singles + 2*a.doubles + 3*a.triples + 4*a.hr)::numeric
+             / NULLIF(a.ab, 0))::numeric, 3) AS slg,
+      ROUND(
+        (((a.h::numeric + a.bb + a.hbp)
+          / NULLIF(a.ab + a.bb + a.hbp + a.sf, 0))
+         + ((a.singles + 2*a.doubles + 3*a.triples + 4*a.hr)::numeric
+            / NULLIF(a.ab, 0))), 3) AS ops
+    FROM agg a
+    ORDER BY ops DESC
+    LIMIT {{limit}};
+
+team_pitching_era_whip_k9_fangraphs:
+  desc: Team ERA/WHIP/K9 (aggregate pitchers; exclude TOT/---).
+  params: [year, limit]
+  param_types: {year: int, limit: int}
+  defaults: {year: "!season_from_query", limit: 30}
+  patterns:
+    - '(?i)\bteam\b.*\b(era|whip|k\/?9)\b(?:.*?(?P<year>(?:18|19|20|21)\d{2}))?(?:.*?\btop\s+(?P<limit>\d+))?'
+  sql: |
+    WITH agg AS (
+      SELECT
+        fpl.season,
+        fpl.team,
+        SUM(fpl.ip) AS ip,
+        SUM(fpl.er) AS er,
+        SUM(fpl.h)  AS h,
+        SUM(fpl.bb) AS bb,
+        SUM(fpl.so) AS so
+      FROM fangraphs_pitching_lahman_like fpl
+      WHERE fpl.season = {{year}}
+        AND fpl.team NOT IN ('TOT','---')
+      GROUP BY fpl.season, fpl.team
+    )
+    SELECT
+      a.team,
+      a.season,
+      ROUND((9.0 * a.er::numeric / NULLIF(a.ip, 0))::numeric, 2)   AS era,
+      ROUND(((a.bb + a.h)::numeric / NULLIF(a.ip, 0))::numeric, 2) AS whip,
+      ROUND((9.0 * a.so::numeric / NULLIF(a.ip, 0))::numeric, 1)   AS k_9
+    FROM agg a
+    ORDER BY era ASC
+    LIMIT {{limit}};
+
+team_hr_lahman:
+  desc: Team HR totals for a completed season (Lahman).
+  params: [year, limit]
+  param_types: {year: int, limit: int}
+  defaults: {year: "!season_from_query", limit: 30}
+  patterns:
+    - '(?i)\bteam\b.*\b(hr|home\s*runs?)\b(?:.*?(?P<year>(?:18|19|20|21)\d{2}))?(?:.*?\btop\s+(?P<limit>\d+))?'
+  sql: |
+    SELECT
+      tms.teamid,
+      tms.name,
+      tms.yearid,
+      tms.hr
+    FROM teams tms
+    WHERE tms.yearid = {{year}}
+    ORDER BY tms.hr DESC
+    LIMIT {{limit}};
+
+career_300_hr_300_sb_lahman:
+  desc: 300 HR & 300 SB careers (Lahman).
+  params: [limit]
+  param_types: {limit: int}
+  defaults: {limit: 50}
+  patterns:
+    - '(?i)\b(300\s*hr).*(300\s*sb)|\b300.*hr.*300.*sb\b'
+  sql: |
+    WITH career AS (
+      SELECT
+        b.playerid,
+        SUM(b.hr)::int AS career_hr,
+        SUM(b.sb)::int AS career_sb,
+        MIN(b.yearid)  AS first_year,
+        MAX(b.yearid)  AS last_year
+      FROM batting b
+      GROUP BY b.playerid
+    )
+    SELECT
+      p.namefirst || ' ' || p.namelast AS player,
+      career_hr AS hr,
+      career_sb AS sb,
+      first_year || '–' || last_year   AS span
+    FROM career c
+    JOIN people p ON p.playerid = c.playerid
+    WHERE c.career_hr >= 300
+      AND c.career_sb >= 300
+    ORDER BY c.career_hr DESC, c.career_sb DESC
+    LIMIT {{limit}};
+
+pitcher_fb_pct_leaders:
+  desc: Pitcher FB% leaders, min IP (season).
+  params: [year, min_ip, limit]
+  param_types: {year: int, min_ip: int, limit: int}
+  defaults: {year: "!season_from_query", min_ip: 100, limit: 10}
+  patterns:
+    - '(?i)\b(leaders?|top\s+\d+).*\bfb%|fly[- ]?ball\b.*?(?P<year>(?:18|19|20|21)\d{2})?.*?(?:top\s+(?P<limit>\d+))?'
+  sql: |
+    WITH ip_agg AS (
+      SELECT idfg, season, SUM(ip) AS ip_season
+      FROM fangraphs_pitching_lahman_like
+      WHERE season = {{year}}
+      GROUP BY idfg, season
+    )
+    SELECT
+      p.name,
+      i.season,
+      ROUND(i.ip_season::numeric, 1) AS ip,
+      ROUND(bb.fb_pc * 100, 2)       AS fb_pct
+    FROM ip_agg i
+    JOIN fangraphs_pitching_batted_ball bb
+      ON bb.idfg = i.idfg AND bb.season = i.season
+    JOIN (
+      SELECT DISTINCT idfg, season, name
+      FROM fangraphs_pitching_lahman_like
+      WHERE season = {{year}}
+    ) p ON p.idfg = i.idfg AND p.season = i.season
+    WHERE i.ip_season >= {{min_ip}}
+    ORDER BY bb.fb_pc DESC
+    LIMIT {{limit}};
+

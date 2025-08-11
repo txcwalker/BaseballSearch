@@ -1,123 +1,201 @@
-# Uses Gemini to turn text → SQL (OpenAI version commented out)
+# Uses Gemini to turn text → SQL (with optional YAML templates for deterministic queries)
 
-# import openai  #deprecated in favor of Gemini, first iteration used openai but usage limits were too low even during testing
+from __future__ import annotations
 
-import google.generativeai as genai
 import os
-from dotenv import load_dotenv
-
 import re
 from datetime import date
+from pathlib import Path
+from typing import Dict, Tuple, Optional
 
+import google.generativeai as genai
+from dotenv import load_dotenv
+import yaml
+from jinja2 import Template
+
+# ---------- Constants & basic helpers ----------
+
+BASE_DIR = Path(__file__).parent
 CURRENT_YEAR = date.today().year
 
-def extract_season(user_q: str) -> int | None:
-    # explicit year
-    m = re.search(r'\b(19|20)\d{2}\b', user_q)
+_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b", re.I)
+_THIS_YEAR_RE = re.compile(r"\b(this year|current year|ytd|so far)\b", re.I)
+
+
+def extract_season(user_q: str) -> Optional[int]:
+    """Return an explicit year if present, else CURRENT_YEAR for 'this year' phrases, else None."""
+    m = _YEAR_RE.search(user_q)
     if m:
         return int(m.group(0))
-    # phrases → current year
-    if re.search(r'\b(this year|current year|ytd|so far)\b', user_q, re.I):
+    if _THIS_YEAR_RE.search(user_q):
         return CURRENT_YEAR
     return None
 
-def normalize_query(user_q: str) -> tuple[str, int]:
-    season = extract_season(user_q)
-    if season is None:
-        season = CURRENT_YEAR  # default to current year (your DB has YTD)
-    # strip trailing punctuation to avoid brittle guards
+
+def normalize_query(user_q: str) -> Tuple[str, int]:
+    """Normalize whitespace/punctuation and resolve season."""
+    season = extract_season(user_q) or CURRENT_YEAR
     q = user_q.strip().rstrip("?.! ")
     return q, season
 
 
-# Functions to load the schema and prompt to be provided to the model and the direction it will take to write its queries
-# The schema_description tells it exactly what tables exist in the database along with their corresponding
-# variables. Addtionally there a few small dictionaries to help the model sort through abbreviations and AL v NL
-def load_schema():
-    base_path = os.path.dirname(__file__)
-    schema_path = os.path.join(base_path, "schema", "schema_description.txt")
-    print(f"Loading schema from: {schema_path}")
-    if not os.path.exists(schema_path):
+# ---------- Templates (data-driven router) ----------
+
+_TEMPLATES: Optional[Dict] = None
+
+
+def load_templates() -> Dict:
+    tpl_path = BASE_DIR / "templates" / "sql_templates.yml"
+    if not tpl_path.exists():
+        return {}
+    return yaml.safe_load(tpl_path.read_text(encoding="utf-8")) or {}
+
+
+def get_templates() -> Dict:
+    global _TEMPLATES
+    if _TEMPLATES is None:
+        _TEMPLATES = load_templates()
+    return _TEMPLATES
+
+
+def match_template_data_driven(user_q: str, season_default: Optional[int]) -> Optional[Tuple[str, Dict]]:
+    """
+    Match the user query against regex patterns defined in YAML.
+    Returns (template_name, params) or None.
+    """
+    q = user_q.strip()
+    templates = get_templates()
+    for name, meta in templates.items():
+        for pat in meta.get("patterns", []):
+            m = re.search(pat, q)
+            if not m:
+                continue
+
+            # 1) start with defaults
+            params = dict(meta.get("defaults", {}))
+            for k, v in list(params.items()):
+                if v == "!season_from_query":
+                    params[k] = extract_season(user_q) or season_default or CURRENT_YEAR
+                elif v == "!current_year":
+                    params[k] = CURRENT_YEAR
+
+            # 2) overlay named captures
+            for k, v in m.groupdict().items():
+                if v:
+                    params[k] = v
+
+            # 3) cast param types
+            types = meta.get("param_types", {})
+            for k, t in types.items():
+                if k in params and params[k] is not None:
+                    try:
+                        if t == "int" or t is int:
+                            params[k] = int(params[k])
+                        elif t == "float" or t is float:
+                            params[k] = float(params[k])
+                    except Exception:
+                        # ignore cast errors; leave raw
+                        pass
+
+            # 4) ensure required params exist
+            required = meta.get("params", [])
+            if any(p not in params or params[p] is None for p in required):
+                continue
+
+            return name, params
+    return None
+
+
+def render_template(name: str, **params) -> str:
+    tpl = get_templates().get(name)
+    if not tpl:
+        return ""
+    return Template(tpl["sql"]).render(**params).strip()
+
+
+# ---------- Prompt & schema loaders ----------
+
+def load_schema() -> str:
+    schema_path = BASE_DIR / "schema" / "schema_description.txt"
+    if not schema_path.exists():
         raise FileNotFoundError(f"Schema file not found at: {schema_path}")
-    with open(schema_path, "r") as f:
-        return f.read()
+    return schema_path.read_text(encoding="utf-8")
 
-# The prompt includes the specific directions for the model to use when constructing the individual sql queries
-def load_prompt_template():
-    base_path = os.path.dirname(__file__)
-    prompt_path = os.path.join(base_path, "prompts", "base_prompt_gemini.txt")
-    print(f"Loading prompt from: {prompt_path}")
-    if not os.path.exists(prompt_path):
+
+def load_prompt_template() -> str:
+    prompt_path = BASE_DIR / "prompts" / "base_prompt_gemini.txt"
+    if not prompt_path.exists():
         raise FileNotFoundError(f"Prompt template not found at: {prompt_path}")
-    with open(prompt_path, "r", encoding = 'utf-8', errors = "replace") as f:
-        return f.read()
+    return prompt_path.read_text(encoding="utf-8", errors="replace")
 
-# Function to build the prompt based on the input
+
 def build_prompt(nl_query, schema_str, prompt_template, season, current_year=CURRENT_YEAR):
-    return prompt_template.format(
-        schema=schema_str.strip(),
-        query=nl_query.strip(),
-        CURRENT_YEAR=current_year,
-        REQUESTED_SEASON=season
-    )
+    data = {
+        "schema": schema_str.strip(),
+        "query": nl_query.strip(),
+        "CURRENT_YEAR": current_year,
+        "REQUESTED_SEASON": season,
+    }
+
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            # leave unknown placeholders untouched, e.g. "{something}"
+            return "{" + key + "}"
+
+    try:
+        return prompt_template.format_map(_SafeDict(data))
+    except Exception:
+        # ultra-safe fallback: do plain replaces for the known keys
+        out = prompt_template
+        for k, v in data.items():
+            out = out.replace("{" + k + "}", str(v))
+        return out
 
 
-# Fetching Gemini API Key
-def load_gemini_key():
+
+# ---------- Gemini client ----------
+
+def load_gemini_key() -> str:
     if "GEMINI_API_KEY" in os.environ:
         return os.environ["GEMINI_API_KEY"]
-
-    # Try loading from .env.gemini if available
-    env_path = os.path.join(os.path.dirname(__file__), "..", ".env.gemini")
-    if os.path.exists(env_path):
+    # Try loading from .env.gemini
+    env_path = BASE_DIR.parent / ".env.gemini"
+    if env_path.exists():
         load_dotenv(env_path)
         if "GEMINI_API_KEY" in os.environ:
             return os.environ["GEMINI_API_KEY"]
-
     raise ValueError("Gemini API key not found in environment or .env.gemini")
 
-# # Calling model to get response
-def get_sql_from_gemini(prompt):
+
+def get_sql_from_gemini(prompt: str) -> str:
     genai.configure(api_key=load_gemini_key())
-
     model = genai.GenerativeModel("models/gemini-2.5-flash")
+    resp = model.generate_content(contents=[{"role": "user", "parts": [prompt]}])
+    text = (resp.text or "").strip()
+    # strip fences if present
+    text = text.replace("```sql", "").replace("```", "").strip()
+    return text
 
 
-    response = model.generate_content(
-        contents=[{"role": "user", "parts": [prompt]}]
-    )
+# ---------- Validation (optional but useful) ----------
 
-    return response.text.strip().replace("```sql", "").replace("```", "").strip()
+_REFUSAL_MARKERS = (
+    "i can only answer baseball questions",
+    "unfortunately i currently do not have access",
+    "i don’t have future-season data",
+    "i don't have future-season data",
+    "cannot provide statistics for",
+    "do not have access to future",
+)
 
 
-# Optional: legacy OpenAI fallback (commented out)
-# def load_openai_key():
-#     from openai import OpenAI
-#     if "OPENAI_API_KEY" in os.environ:
-#         return os.environ["OPENAI_API_KEY"]
-#     env_path = os.path.join(os.path.dirname(__file__), "..", ".env.openai")
-#     if os.path.exists(env_path):
-#         load_dotenv(env_path)
-#     return os.environ.get("OPENAI_API_KEY")
-
-# def get_sql_from_gpt(prompt, model="gpt-4", temperature=0):
-#     client = OpenAI(api_key=load_openai_key())
-#     response = client.chat.completions.create(
-#         model=model,
-#         temperature=temperature,
-#         messages=[{"role": "user", "content": prompt}]
-#     )
-#     return response.choices[0].message.content.strip()
-
-# Function to handle erroneous requests
-def handle_model_response(response_text: str | None, season: int):
+def handle_model_response(response_text: Optional[str], season: int) -> Optional[str]:
     """
-    Validates the model output and decides whether to proceed, reprompt, or surface a user-facing message.
-
+    Decide whether to proceed with execution or surface a message.
     Returns:
-      - None  → looks like valid SQL; go ahead and execute
-      - "__REPROMPT__" → model wrongly claimed "future" for CURRENT_YEAR; gently reprompt
-      - str message → a user-facing error/refusal string to display (do NOT execute)
+      - None → looks like SQL; proceed
+      - "__REPROMPT__" → model thought 'future' for CURRENT_YEAR
+      - str message → show to user (do NOT execute)
     """
     text = (response_text or "").strip()
     if not text:
@@ -125,23 +203,11 @@ def handle_model_response(response_text: str | None, season: int):
 
     lo = text.lower()
 
-    # Known refusal/canned messages you want to surface AS-IS
-    refusal_markers = (
-        "i can only answer baseball questions",
-        "unfortunately i currently do not have access",
-        "i don’t have future-season data",
-        "i don't have future-season data",
-        "cannot provide statistics for",
-        "do not have access to future",
-    )
-    if any(m in lo for m in refusal_markers):
-        # If it's the current year but the model thinks it's "future", ask to reprompt
+    if any(m in lo for m in _REFUSAL_MARKERS):
         if season == CURRENT_YEAR and ("future" in lo or "future-season" in lo):
             return "__REPROMPT__"
-        return text  # surface the refusal message
+        return text
 
-    # Some models prepend prose/markdown. Bail if it doesn't look like SQL at all.
-    # Accept common SQL starters beyond SELECT (CTEs, EXPLAIN, etc.).
     looks_sql = (
         "select " in lo
         or lo.startswith("with ")
@@ -154,29 +220,56 @@ def handle_model_response(response_text: str | None, season: int):
     if not looks_sql:
         return "I wasn’t able to generate a valid query for that question."
 
-    # Passed checks → treat as executable SQL
     return None
 
 
+# ---------- CLI entry ----------
 
-def main():
+def main() -> None:
     import argparse
-    parser = argparse.ArgumentParser()
+
+    parser = argparse.ArgumentParser(description="Generate SQL from natural language (with optional templates).")
     parser.add_argument("query", help="Natural language query")
+    parser.add_argument("--no-templates", action="store_true", help="Force LLM generation even if a template matches.")
+    parser.add_argument("--print-prompt", action="store_true", help="Print the prompt sent to Gemini.")
     args = parser.parse_args()
 
-    # NEW: resolve “this year”, explicit years, etc.
+    # Normalize input & determine season
     norm_q, season = normalize_query(args.query)
 
+    # 1) Try YAML template first (fully data-driven; no Python edits for new templates)
+    if not args.no_templates:
+        match = match_template_data_driven(norm_q, season_default=season)
+        if match:
+            name, params = match
+            sql = render_template(name, **params)
+            if sql:
+                print(f"\n--- Using template: {name} ---\n")
+                print(sql)
+                return
+
+    # 2) Fall back to LLM using your base prompt + schema
     schema_str = load_schema()
     prompt_template = load_prompt_template()
     full_prompt = build_prompt(norm_q, schema_str, prompt_template, season)
 
-    print("\n--- Prompt Sent to Gemini ---\n")
-    print(full_prompt)
-    print("\n--- SQL Output ---\n")
+    if args.print_prompt:
+        print("\n--- Prompt Sent to Gemini ---\n")
+        print(full_prompt)
+
     sql = get_sql_from_gemini(full_prompt)
-    print(sql)
+
+    # Optional validation/guard
+    verdict = handle_model_response(sql, season)
+    if verdict is None:
+        print("\n--- SQL Output ---\n")
+        print(sql)
+    elif verdict == "__REPROMPT__":
+        # Minimal gentle nudge (you can customize)
+        print("I wasn’t able to generate a valid query for that question.")
+    else:
+        # Surface the refusal/message
+        print(verdict)
 
 
 if __name__ == "__main__":
