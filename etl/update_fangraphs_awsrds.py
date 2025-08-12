@@ -41,7 +41,7 @@ batting_rename_map = {
     'IFH%': 'ifh_pc', 'BUH%': 'buh_pc', 'Pull%': 'pull_pc', 'Cent%': 'cent_pc',
     'Oppo%': 'oppo_pc', 'Soft%': 'soft_pc', 'Med%': 'med_pc', 'Hard%': 'hard_pc',
     'HardHit%': 'hardhit_pc', 'Barrel%': 'barrel_pc', 'TTO%': 'tto_pc', '+WPA': 'wpa_plus',
-    '-WPA': 'wpa_minus',
+    '-WPA': 'wpa_minus', '1B':'singles','2B':'doubles','3B':'triples'
 }
 
 pitching_rename_map = {
@@ -129,6 +129,58 @@ def normalize_negatives(df: pd.DataFrame) -> pd.DataFrame:
 # Apply cleaning
 df_pitch = resolve_fb_conflict(df_pitch)
 df_bat = normalize_negatives(convert_numeric(clean_columns(df_bat)))
+
+def finalize_batting(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = df.copy()
+
+    # Normalize team aggregate code
+    if "team" in out.columns:
+        out["team"] = out["team"].replace({"- - -": "TOT"})
+
+    # Coerce counting stats that we use downstream
+    for c in ("h", "hr", "2b", "3b"):
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce")
+
+    # ✅ Always (re)compute from source columns if present
+    if "2b" in out.columns:
+        out["doubles"] = pd.to_numeric(out["2b"], errors="coerce")
+    else:
+        # if no source, keep existing or set NA so singles calc can reflect missingness
+        if "doubles" not in out.columns:
+            out["doubles"] = pd.NA
+
+    if "3b" in out.columns:
+        out["triples"] = pd.to_numeric(out["3b"], errors="coerce")
+    else:
+        if "triples" not in out.columns:
+            out["triples"] = pd.NA
+
+    # Ensure components exist for singles calc
+    for c in ("h", "hr", "doubles", "triples"):
+        if c not in out.columns:
+            out[c] = pd.NA
+
+    # Compute singles from components
+    out["singles"] = (
+        pd.to_numeric(out["h"], errors="coerce")
+        - pd.to_numeric(out["doubles"], errors="coerce")
+        - pd.to_numeric(out["triples"], errors="coerce")
+        - pd.to_numeric(out["hr"], errors="coerce")
+    )
+
+    # Clamp impossible negatives (bad source rows) to 0
+    out["singles"] = out["singles"].where(out["singles"].ge(0) | out["singles"].isna(), 0)
+
+    return out
+
+
+# Apply it
+df_bat = finalize_batting(df_bat)
+
+
 df_pitch = normalize_negatives(convert_numeric(clean_columns(df_pitch)))
 
 # Fill NA
