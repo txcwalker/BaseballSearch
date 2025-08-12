@@ -27,6 +27,8 @@ DB_PARAMS = {
     "port": os.getenv("AWSPORT"),
 }
 
+# Optional behavior
+AUTO_DEDUPE = (os.getenv("AUTO_DEDUPE", "true").lower() in {"1", "true", "yes", "y"})
 YEAR = date.today().year
 
 # ---------------- Rename maps ----------------
@@ -206,22 +208,17 @@ batting_dfs = split_dataframe(df_bat, batting_splits)
 pitching_dfs = split_dataframe(df_pitch, pitching_splits)
 
 # ---------------- Key selection & index checks ----------------
-# Put truly season-aggregated tables here (if any)
-SEASON_ONLY: set[str] = set()  # e.g., {"some_season_summary_table"}
+SEASON_ONLY: set[str] = set()  # Add tables here if they have no per-team rows
 
 def conflict_cols_for(table_name: str, df_cols: List[str]) -> List[str]:
     if table_name in SEASON_ONLY:
         return ["idfg", "season"]
     return ["idfg", "season", "team"] if "team" in df_cols else ["idfg", "season"]
 
-def has_matching_unique_index(conn, table_name: str, conflict_cols: List[str]) -> bool:
-    """
-    Returns True if a UNIQUE index/constraint exists with exactly these columns (order matters).
-    """
+def existing_unique_indexes(conn, table_name: str) -> List[List[str]]:
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT i.relname AS index_name,
-                   array_agg(a.attname ORDER BY a.attnum) AS cols
+            SELECT array_agg(a.attname ORDER BY k.ord) AS cols
             FROM pg_index ix
             JOIN pg_class i ON i.oid = ix.indexrelid
             JOIN pg_class t ON t.oid = ix.indrelid
@@ -231,10 +228,71 @@ def has_matching_unique_index(conn, table_name: str, conflict_cols: List[str]) -
               AND ix.indisunique
             GROUP BY i.relname
         """, (table_name,))
-        for _, cols in cur.fetchall():
-            if list(cols) == conflict_cols:
-                return True
-    return False
+        rows = cur.fetchall()
+    return [list(cols) for (cols,) in rows] if rows else []
+
+def has_matching_unique_index(conn, table_name: str, conflict_cols: List[str]) -> bool:
+    # Require exact column list match (order matters for arbiter)
+    return conflict_cols in existing_unique_indexes(conn, table_name)
+
+def ensure_unique_index(conn, table_name: str, conflict_cols: List[str]) -> None:
+    """
+    Create a UNIQUE index CONCURRENTLY if missing.
+    Uses a temporary autocommit toggle because CONCURRENTLY cannot run inside a txn.
+    """
+    if has_matching_unique_index(conn, table_name, conflict_cols):
+        return
+
+    idx_name = f"ux_{table_name}_{'_'.join(conflict_cols)}"
+    cols_sql = ", ".join(conflict_cols)
+    stmt = f'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS {idx_name} ON "{table_name}" ({cols_sql});'
+
+    # Toggle autocommit to run concurrently
+    old_autocommit = conn.autocommit
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            print(f"🧱 Creating UNIQUE index on `{table_name}` for ({cols_sql}) ...")
+            cur.execute(stmt)
+        print(f"✅ Ensured UNIQUE index `{idx_name}` on `{table_name}`")
+    finally:
+        conn.autocommit = old_autocommit
+
+def count_duplicates(conn, table_name: str, key_cols: List[str]) -> int:
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT COALESCE(SUM(cnt) ,0) FROM (
+              SELECT COUNT(*) - 1 AS cnt
+              FROM "{table_name}"
+              GROUP BY {", ".join(key_cols)}
+              HAVING COUNT(*) > 1
+            ) s;
+        """)
+        (dupes,) = cur.fetchone()
+    return int(dupes or 0)
+
+def dedupe_table(conn, table_name: str, key_cols: List[str]) -> int:
+    """
+    Delete perfect duplicates keeping the first physical row (arbitrary) per key.
+    Returns number of rows deleted.
+    """
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            WITH ranked AS (
+              SELECT ctid, ROW_NUMBER() OVER (
+                  PARTITION BY {", ".join(key_cols)} ORDER BY ctid
+              ) AS rn
+              FROM "{table_name}"
+            )
+            DELETE FROM "{table_name}" t
+            USING ranked r
+            WHERE t.ctid = r.ctid
+              AND r.rn > 1;
+        """)
+        deleted = cur.rowcount or 0
+    if deleted:
+        conn.commit()
+    return deleted
 
 # ---------------- Change detection ----------------
 def get_changed_rows(df: pd.DataFrame, table_name: str, conn) -> pd.DataFrame:
@@ -249,6 +307,7 @@ def get_changed_rows(df: pd.DataFrame, table_name: str, conn) -> pd.DataFrame:
         if not keys_tuple:
             return pd.DataFrame()
 
+        placeholders = ", ".join(["%s"] * len(key_cols))
         select_sql = f"""
             SELECT {", ".join(f'"{c}"' for c in df.columns)}
             FROM "{table_name}"
@@ -306,16 +365,18 @@ def upsert_table(df: pd.DataFrame, table_name: str, conn, batch_size: int = 5000
     if missing:
         raise ValueError(f"`{table_name}` upsert missing key columns in payload: {missing}")
 
-    # Verify unique index exists for conflict target
-    if not has_matching_unique_index(conn, table_name, key_cols):
-        cols = ", ".join(key_cols)
-        idx_name = f"ux_{table_name}_{'_'.join(key_cols)}"
-        raise RuntimeError(
-            f"🚫 No UNIQUE index/constraint matches ON CONFLICT ({cols}) on `{table_name}`.\n"
-            f"Create it first:\n"
-            f"  CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS {idx_name}\n"
-            f"  ON {table_name} ({cols});"
-        )
+    # Preflight: dedupe + ensure unique index
+    dupes = count_duplicates(conn, table_name, key_cols)
+    if dupes:
+        msg = f"♻️ Found {dupes} duplicate row(s) by key {tuple(key_cols)} in `{table_name}`."
+        if AUTO_DEDUPE:
+            print(msg + " Auto-deduping…")
+            deleted = dedupe_table(conn, table_name, key_cols)
+            print(f"🗑️  Deleted {deleted} duplicate row(s) from `{table_name}`.")
+        else:
+            raise RuntimeError(msg + " Set AUTO_DEDUPE=true to allow automatic cleanup.")
+
+    ensure_unique_index(conn, table_name, key_cols)
 
     col_list = ", ".join([f'"{c}"' for c in all_cols])
     set_clause = ", ".join([f'"{c}" = EXCLUDED."{c}"' for c in non_key_cols])
