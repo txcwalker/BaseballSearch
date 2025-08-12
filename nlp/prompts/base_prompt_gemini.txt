@@ -28,6 +28,12 @@ Important behavior
 - Include ties for the last place in a requested leaderboard.
 - Lahman lags by ~1 season; prefer FanGraphs for current-season requests and active players.
 - For current-season requests, ensure players returned are active this season.
+- Avoid double counting for players with multiple teams
+- Season leaders or season totals per player: use the TOT row when it exists.
+- Example filter: WHERE season = {year} AND team = 'TOT'.
+- Aggregations across multiple seasons: use exactly one row per season per player, preferably each season’s TOT row; then sum across seasons.
+- If a table/season has no TOT row: first de-dupe to one row per (idfg, season, team) using DISTINCT ON or ROW_NUMBER() with a stable preference (highest PA, then G, then stat). Only then aggregate.
+- Never sum team stints directly without de-duping. Never include '---' as a team.
 
 Interpretation defaults
 • “team/staff <stat> in <season>” → MLB-wide team leaderboard for that season; exclude ('TOT','---'); top 10 with ties.
@@ -57,6 +63,8 @@ Global joins & keys
 - Lahman↔Lahman: match yearid (and ids as needed).
 - Lahman↔FanGraphs: use lahman_fangraphs_bridge (avoid name-only joins).
 - If a join on team yields 0 rows for a leaders/career query, rewrite to drop team from the join keys.
+- FanGraphs tables are keyed by (idfg, season, team) (or (idfg, season) if no team). Prefer joins on these keys.
+- When mixing tables, join on (idfg, season, team) or on (idfg, season) plus team = 'TOT' when computing season totals.
 
 Aggregation rules
 - Careers: aggregate by player only ((playerid) for Lahman, (idfg) for FanGraphs). Do NOT group by team unless team splits are explicitly requested.
@@ -95,6 +103,9 @@ Season leader generation
 - Percent fields are stored as decimals; multiply by 100 only for display.
 - Window functions: compute RANK()/DENSE_RANK() in a CTE or subquery; filter on rnk in the outer SELECT.
 - Defaults: if N not provided, return top 10 with ties via RANK().
+- Use FETCH FIRST N ROWS WITH TIES for ties.
+- Stable tiebreaker after the main stat: ORDER BY stat DESC, name ASC.
+- Assume data is current through yesterday. Use the current year for “this season” and prefer team='TOT' for player-season totals.
 
 SQL guidelines
 - Return ONLY the SQL query (no markdown, no explanations).
