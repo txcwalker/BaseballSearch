@@ -41,7 +41,7 @@ batting_rename_map = {
     'IFH%': 'ifh_pc', 'BUH%': 'buh_pc', 'Pull%': 'pull_pc', 'Cent%': 'cent_pc',
     'Oppo%': 'oppo_pc', 'Soft%': 'soft_pc', 'Med%': 'med_pc', 'Hard%': 'hard_pc',
     'HardHit%': 'hardhit_pc', 'Barrel%': 'barrel_pc', 'TTO%': 'tto_pc', '+WPA': 'wpa_plus',
-    '-WPA': 'wpa_minus', '1B':'singles','2B':'doubles','3B':'triples'
+    '-WPA': 'wpa_minus', '1b':'singles','2b':'doubles','3b':'triples'
 }
 
 pitching_rename_map = {
@@ -448,6 +448,7 @@ def upsert_table(df: pd.DataFrame, table_name: str, conn, batch_size: int = 5000
     values_iter = (tuple(row) for row in changed.itertuples(index=False, name=None))
     cur = conn.cursor()
     total = 0
+
     try:
         print(f"🚀 Running UPSERT on `{table_name}` with {len(changed)} changed row(s) (batch={batch_size})...")
         for batch in chunk(values_iter, batch_size):
@@ -460,7 +461,10 @@ def upsert_table(df: pd.DataFrame, table_name: str, conn, batch_size: int = 5000
         print(f"❌ Failed to update `{table_name}`: {e}")
         raise
     finally:
+        if table_name == "fangraphs_batting_lahman_like":
+            print(f"📝 Columns in `{table_name}`:", list(df.columns))
         cur.close()
+
 
 # ---------------- Main ----------------
 if __name__ == "__main__":
