@@ -96,6 +96,7 @@ python-json-logger==3.3.0
 pytz==2025.2
 PyYAML==6.0.2
 pyzmq==27.0.0
+rapidfuzz==3.9.7
 referencing==0.36.2
 requests==2.32.4
 rfc3339-validator==0.1.4
@@ -136,3 +137,4 @@ webcolors==24.11.1
 webencodings==0.5.1
 websocket-client==1.8.0
 wrapt==1.17.2
+
