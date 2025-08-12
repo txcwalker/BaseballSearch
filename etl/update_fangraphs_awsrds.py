@@ -461,8 +461,6 @@ def upsert_table(df: pd.DataFrame, table_name: str, conn, batch_size: int = 5000
         print(f"❌ Failed to update `{table_name}`: {e}")
         raise
     finally:
-        if table_name == "fangraphs_batting_lahman_like":
-            print(f"📝 Columns in `{table_name}`:", list(df.columns))
         cur.close()
 
 
