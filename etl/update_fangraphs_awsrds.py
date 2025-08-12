@@ -235,10 +235,11 @@ def has_matching_unique_index(conn, table_name: str, conflict_cols: List[str]) -
     # Require exact column list match (order matters for arbiter)
     return conflict_cols in existing_unique_indexes(conn, table_name)
 
-def ensure_unique_index(conn, table_name: str, conflict_cols: List[str]) -> None:
+def ensure_unique_index(conn, table_name: str, conflict_cols: list[str]) -> None:
     """
-    Create a UNIQUE index CONCURRENTLY if missing.
-    Uses a temporary autocommit toggle because CONCURRENTLY cannot run inside a txn.
+    Ensure a UNIQUE index exists for the given conflict columns.
+    Use a separate autocommit connection for CREATE INDEX CONCURRENTLY
+    to avoid 'set_session cannot be used inside a transaction'.
     """
     if has_matching_unique_index(conn, table_name, conflict_cols):
         return
@@ -247,16 +248,18 @@ def ensure_unique_index(conn, table_name: str, conflict_cols: List[str]) -> None
     cols_sql = ", ".join(conflict_cols)
     stmt = f'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS {idx_name} ON "{table_name}" ({cols_sql});'
 
-    # Toggle autocommit to run concurrently
-    old_autocommit = conn.autocommit
+    # Use a brand-new connection in autocommit mode
+    admin_conn = None
     try:
-        conn.autocommit = True
-        with conn.cursor() as cur:
+        admin_conn = psycopg2.connect(**DB_PARAMS)
+        admin_conn.autocommit = True
+        with admin_conn.cursor() as cur:
             print(f"🧱 Creating UNIQUE index on `{table_name}` for ({cols_sql}) ...")
             cur.execute(stmt)
         print(f"✅ Ensured UNIQUE index `{idx_name}` on `{table_name}`")
     finally:
-        conn.autocommit = old_autocommit
+        if admin_conn:
+            admin_conn.close()
 
 def count_duplicates(conn, table_name: str, key_cols: List[str]) -> int:
     with conn.cursor() as cur:
