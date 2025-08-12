@@ -95,7 +95,7 @@ batting_splits = {
     ],
     "fangraphs_batting_standard_ratios": [
         "idfg", "season", "name", "team", "avg", "obp", "slg", "ops", "iso", "babip",
-        "bb_pc", "kpc", "bb_k", "gdp"
+        "bb_pc", "k_pc", "bb_k", "gdp"
     ],
     "fangraphs_batting_advanced": [
         "idfg", "season", "name", "team", "woba", "wraa", "wrc", "wrc_plus", "war", "rar",

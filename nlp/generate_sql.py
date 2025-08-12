@@ -13,6 +13,9 @@ from dotenv import load_dotenv
 import yaml
 from jinja2 import Template
 
+from nlp.templates import render_sql
+
+
 # ---------- Constants & basic helpers ----------
 
 BASE_DIR = Path(__file__).parent
@@ -39,33 +42,45 @@ def normalize_query(user_q: str) -> Tuple[str, int]:
     return q, season
 
 
-# ---------- Templates (data-driven router) ----------
+# ---------- Templates (data‑driven router) ----------
+from pathlib import Path
+import yaml
+import re
+from typing import Optional, Tuple, Dict
+
+BASE_DIR = Path(__file__).parent  # ensure this exists once in the file
 
 _TEMPLATES: Optional[Dict] = None
 
-
-def load_templates() -> Dict:
-    tpl_path = BASE_DIR / "templates" / "sql_templates.yml"
-    if not tpl_path.exists():
-        return {}
-    return yaml.safe_load(tpl_path.read_text(encoding="utf-8")) or {}
-
+def _load_templates_file() -> Dict:
+    # Look for either .yaml or .yml inside nlp/templates/
+    for p in (
+        BASE_DIR / "templates" / "sql_templates.yaml",
+        BASE_DIR / "templates" / "sql_templates.yml",
+    ):
+        if p.exists():
+            return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    return {}
 
 def get_templates() -> Dict:
     global _TEMPLATES
     if _TEMPLATES is None:
-        _TEMPLATES = load_templates()
+        _TEMPLATES = _load_templates_file()
     return _TEMPLATES
-
 
 def match_template_data_driven(user_q: str, season_default: Optional[int]) -> Optional[Tuple[str, Dict]]:
     """
-    Match the user query against regex patterns defined in YAML.
-    Returns (template_name, params) or None.
+    Match the user query against regex patterns defined in the YAML.
+    YAML structure per template (optional):
+      patterns: [ "(?i)leaders? in (?P<stat>\\w[\\w%/\\- ]+) in (?P<season>\\d{4})" ]
+      defaults: { season: "!season_from_query", top_n: 10, stat_label: "hr" }
+      param_types: { season: "int", top_n: "int" }
+      params: [ "season", "top_n", "stat_col", "stat_label" ]  # required for render
+      sql: "...jinja..."
     """
-    q = user_q.strip()
     templates = get_templates()
-    for name, meta in templates.items():
+    q = (user_q or "").strip()
+    for name, meta in templates.get("templates", {}).items():
         for pat in meta.get("patterns", []):
             m = re.search(pat, q)
             if not m:
@@ -73,15 +88,22 @@ def match_template_data_driven(user_q: str, season_default: Optional[int]) -> Op
 
             # 1) start with defaults
             params = dict(meta.get("defaults", {}))
+            # resolve magic defaults
             for k, v in list(params.items()):
                 if v == "!season_from_query":
-                    params[k] = extract_season(user_q) or season_default or CURRENT_YEAR
+                    # try to pull from text; fall back to season_default
+                    year_m = re.search(r"\b(19|20)\d{2}\b", q)
+                    if year_m:
+                        params[k] = int(year_m.group(0))
+                    else:
+                        params[k] = season_default
                 elif v == "!current_year":
-                    params[k] = CURRENT_YEAR
+                    from datetime import date
+                    params[k] = date.today().year
 
             # 2) overlay named captures
-            for k, v in m.groupdict().items():
-                if v:
+            for k, v in (m.groupdict() or {}).items():
+                if v is not None:
                     params[k] = v
 
             # 3) cast param types
@@ -89,15 +111,14 @@ def match_template_data_driven(user_q: str, season_default: Optional[int]) -> Op
             for k, t in types.items():
                 if k in params and params[k] is not None:
                     try:
-                        if t == "int" or t is int:
+                        if t in ("int", int):
                             params[k] = int(params[k])
-                        elif t == "float" or t is float:
+                        elif t in ("float", float):
                             params[k] = float(params[k])
                     except Exception:
-                        # ignore cast errors; leave raw
                         pass
 
-            # 4) ensure required params exist
+            # 4) ensure required params present
             required = meta.get("params", [])
             if any(p not in params or params[p] is None for p in required):
                 continue
@@ -105,12 +126,11 @@ def match_template_data_driven(user_q: str, season_default: Optional[int]) -> Op
             return name, params
     return None
 
-
 def render_template(name: str, **params) -> str:
-    tpl = get_templates().get(name)
-    if not tpl:
-        return ""
-    return Template(tpl["sql"]).render(**params).strip()
+    # Use the shared Jinja renderer
+    from nlp.templates import render_sql
+    return render_sql(name, **params) or ""
+
 
 
 # ---------- Prompt & schema loaders ----------

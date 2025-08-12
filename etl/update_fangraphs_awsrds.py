@@ -1,20 +1,22 @@
 # etl/update_fangraphs_awsrds.py
+# Script that updates the AWS RDS database, runs mornings at 7 AM CST via GitHub runner
 
-# Script that updates the aws rds database, runs mornings at 7 AM CST and is automated via a github runner connect to AWS
+from __future__ import annotations
 
-# Import Statements
+# Imports
+import os
+import re
+from datetime import date
+from pathlib import Path
+from typing import Iterable, List, Tuple, Dict
+
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 from pybaseball import batting_stats, pitching_stats
-from datetime import date
 from dotenv import load_dotenv
-import os
-from pathlib import Path
-import re
 
-
-# Load environment
+# ---------------- Env & DB params ----------------
 load_dotenv(Path(__file__).resolve().parents[1] / ".env.awsrds")
 
 DB_PARAMS = {
@@ -25,7 +27,9 @@ DB_PARAMS = {
     "port": os.getenv("AWSPORT"),
 }
 
-# Renaming maps
+YEAR = date.today().year
+
+# ---------------- Rename maps ----------------
 batting_rename_map = {
     'BB%': 'bb_pc', 'K%': 'k_pc', 'BB/K': 'bb_k', 'wRC+': 'wrc_plus',
     'O-Swing%': 'o_swing_pc', 'Z-Swing%': 'z_swing_pc', 'Swing%': 'swing_pc',
@@ -34,7 +38,7 @@ batting_rename_map = {
     'CStr%': 'cstr_pc', 'CSW%': 'csw_pc', 'WPA+': 'wpa_plus', 'wRC': 'wrc',
     'IFH%': 'ifh_pc', 'BUH%': 'buh_pc', 'Pull%': 'pull_pc', 'Cent%': 'cent_pc',
     'Oppo%': 'oppo_pc', 'Soft%': 'soft_pc', 'Med%': 'med_pc', 'Hard%': 'hard_pc',
-    'HardHit%': 'hardhit_pc', 'Barrel%': 'barrel_pc', 'TTO%': 'tto_pc','+WPA': 'wpa_plus',
+    'HardHit%': 'hardhit_pc', 'Barrel%': 'barrel_pc', 'TTO%': 'tto_pc', '+WPA': 'wpa_plus',
     '-WPA': 'wpa_minus',
 }
 
@@ -49,28 +53,19 @@ pitching_rename_map = {
     '-WPA': 'wpa_minus',
 }
 
-YEAR = date.today().year
-
-# Fix duplicate 'fb%' column ambiguity in pitching data
-def resolve_fb_conflict(df):
-    rename_map = {
-        'fb%': 'fyb_pc',
-        'fb% 2': 'fb_pc'
-    }
-
-    affected_cols = [col for col in df.columns if col in rename_map]
-
-    if affected_cols:
-        print(f"🔧 Renaming columns due to FB% conflict:")
-        for col in affected_cols:
-            print(f"   ➤ '{col}' → '{rename_map[col]}'")
+# ---------------- FB% conflict helper ----------------
+def resolve_fb_conflict(df: pd.DataFrame) -> pd.DataFrame:
+    rename_map = {'fb%': 'fyb_pc', 'fb% 2': 'fb_pc'}
+    affected = [c for c in df.columns if c in rename_map]
+    if affected:
+        print("🔧 Renaming columns due to FB% conflict:")
+        for c in affected:
+            print(f"   ➤ '{c}' → '{rename_map[c]}'")
     else:
         print("✅ No FB% column conflicts found.")
-
     return df.rename(columns=rename_map)
 
-
-# Some Data cleaning, including grabbing just year in questoin, renaming columns and replcing problematic symbols
+# ---------------- Load data ----------------
 try:
     df_bat = batting_stats(YEAR)
     df_bat["Season"] = YEAR
@@ -78,6 +73,7 @@ try:
     df_bat.replace({'\$': ''}, regex=True, inplace=True)
 except Exception as e:
     print(f"⚠️ Skipped batting {YEAR}: {e}")
+    df_bat = pd.DataFrame()
 
 try:
     df_pitch = pitching_stats(YEAR)
@@ -86,191 +82,206 @@ try:
     df_pitch.replace({'\$': ''}, regex=True, inplace=True)
 except Exception as e:
     print(f"⚠️ Skipped pitching {YEAR}: {e}")
+    df_pitch = pd.DataFrame()
 
-# Getting rid of batters with 0 ABs
-df_bat = df_bat[df_bat['PA'] > 0]
+# Remove batters with 0 PA
+if not df_bat.empty and "PA" in df_bat.columns:
+    df_bat = df_bat[df_bat['PA'] > 0]
 
-# Getting df ready for update by replacing problematic symbols, normalizing column names and setting dtype of columns
-def normalize(df):
-    df.replace({'\\$': '', '%': ''}, regex=True, inplace=True)
-    df = df.map(lambda x: str(x).strip() if isinstance(x, str) else x)
-    for col in df.columns:
-        try:
-            df[col] = pd.to_numeric(df[col])
-        except Exception:
-            pass  # or: logging.warning(f"Could not convert column {col} to numeric")
-
-    return df
-
-# Standardize column names (strip and lowercase)
-def clean_columns(df):
-    original_columns = df.columns
-    renamed_columns = [
-        col.strip().lower().replace('%', '_pc') for col in original_columns
-    ]
-    df.columns = renamed_columns
-
-    for orig_col, new_col in zip(original_columns, renamed_columns):
-        if '%' in orig_col or new_col.endswith('_pc'):
-            df[new_col] = (
-                df[new_col]
-                .astype(str)
-                .str.replace('%', '', regex=False)
-                .str.strip()
+# ---------------- Cleaning helpers ----------------
+def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    original = df.columns
+    renamed = [c.strip().lower().replace('%', '_pc') for c in original]
+    df = df.copy()
+    df.columns = renamed
+    for orig, new in zip(original, renamed):
+        if '%' in orig or new.endswith('_pc'):
+            df[new] = (
+                df[new].astype(str).str.replace('%', '', regex=False).str.strip()
             )
-            df[new_col] = pd.to_numeric(df[new_col], errors='coerce')
-
+            df[new] = pd.to_numeric(df[new], errors='coerce')
     return df
 
-# Attempt to convert all data to numeric where possible
-def convert_numeric(df):
-    for col in df.columns:
+def convert_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = df.copy()
+    for col in out.columns:
         try:
-            df[col] = pd.to_numeric(df[col])
+            out[col] = pd.to_numeric(out[col])
         except Exception:
-            pass  # or: logging.warning(f"Could not convert column {col} to numeric")
+            pass
+    return out
 
-    return df
-
-# Normalize parenthesis-style negative numbers like (0.2) -> -0.2
-def normalize_negatives(df):
-    def convert(x):
+def normalize_negatives(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    def conv(x):
         if isinstance(x, str) and re.match(r'^\(\d+(\.\d+)?\)$', x):
             return float(re.sub(r'^\((.*)\)$', r'-\1', x))
         return x
+    return df.apply(lambda col: col.map(conv))
 
-    return df.apply(lambda col: col.map(convert))
-
-
-# Clean and fix dataframes
+# Apply cleaning
 df_pitch = resolve_fb_conflict(df_pitch)
 df_bat = normalize_negatives(convert_numeric(clean_columns(df_bat)))
-df_pitch = clean_columns(df_pitch)
-df_pitch = normalize_negatives(convert_numeric(df_pitch))
+df_pitch = normalize_negatives(convert_numeric(clean_columns(df_pitch)))
 
-# Fill missing values
-df_bat.fillna(0.00, inplace=True)
-df_pitch.fillna(0.00, inplace=True)
+# Fill NA
+if not df_bat.empty:
+    df_bat = df_bat.fillna(0.0)
+if not df_pitch.empty:
+    df_pitch = df_pitch.fillna(0.0)
 
-# Define the schema mappings
-batting_splits = {
-        "fangraphs_batting_lahman_like": [
-            "idfg", "season", "name", "team", "g", "ab", "pa", "h", "singles", "doubles", "triples", "hr",
-            "r", "rbi", "bb", "ibb", "so", "hbp", "sf", "sh", "sb", "cs"
-        ],
-        "fangraphs_batting_standard_ratios": [
-            "idfg", "season", "name", "team", "avg", "obp", "slg", "ops", "iso", "babip",
-            "bb_pc", "kpc", "bb_k", "gdp"
-        ],
-        "fangraphs_batting_advanced": [
-            "idfg", "season", "name", "team", "woba", "wraa", "wrc", "wrc_plus", "war", "rar",
-            "bat", "fld", "rep", "pos", "off", "def", "dol"
-        ],
-        "fangraphs_plate_discipline": [
-            "idfg", "season", "name", "team", "o_swing_pc", "z_swing_pc", "swing_pc", "o_contact_pc",
-            "z_contact_pc", "contact_pc", "zone_pc", "f_strike_pc", "swstr_pc", "cstr_pc", "csw_pc", "wpa",
-            "clutch", "re24", "rew", "pli", "phli", "ph"
-        ],
-        "fangraphs_batted_ball": [
-            "idfg", "season", "name", "team", "gb", "fb", "ld", "iffb", "gb_fb", "ld_pc", "gb_pc", "fb_pc",
-            "iffb_pc", "hr_fb", "ifh", "ifh_pc", "bu", "buh", "buh_pc", "pull_pc", "cent_pc", "oppo_pc", "soft_pc",
-            "med_pc", "hard_pc", "hardhit", "hardhit_pc", "ev", "la", "barrels", "barrel_pc", "maxev", "tto_pc"
-        ],
-        "fangraphs_baserunning_fielding": [
-            "idfg", "season", "name", "team", "bsr", "spd", "wsb", "ubr", "wgdp"
-        ],
-        "fangraphs_batter_pitch_type_summary": [
-            "idfg", "season", "name", "team", "fb_pc", "fbv", "sl_pc", "slv", "ch_pc", "chv", "cb_pc", "cbv",
-            "sf_pc", "sfv", "ct_pc", "ctv", "kn_pc", "knv", "xx_pc", "po_pc", "wfb", "wsl", "wch", "wcb", "wsf",
-            "wct", "wkn", "wfb_c", "wsl_c", "wch_c", "wcb_c", "wsf_c", "wct_c", "wkn_c"
-        ]
-    }
+# ---------------- Schema mappings ----------------
+batting_splits: Dict[str, List[str]] = {
+    "fangraphs_batting_lahman_like": [
+        "idfg","season","name","team","g","ab","pa","h","singles","doubles","triples","hr",
+        "r","rbi","bb","ibb","so","hbp","sf","sh","sb","cs"
+    ],
+    "fangraphs_batting_standard_ratios": [
+        "idfg","season","name","team","avg","obp","slg","ops","iso","babip","bb_pc","k_pc","bb_k","gdp"
+    ],
+    "fangraphs_batting_advanced": [
+        "idfg","season","name","team","woba","wraa","wrc","wrc_plus","war","rar","bat","fld","rep","pos","off","def","dol"
+    ],
+    "fangraphs_plate_discipline": [
+        "idfg","season","name","team","o_swing_pc","z_swing_pc","swing_pc","o_contact_pc","z_contact_pc","contact_pc",
+        "zone_pc","f_strike_pc","swstr_pc","cstr_pc","csw_pc","wpa","clutch","re24","rew","pli","phli","ph"
+    ],
+    "fangraphs_batted_ball": [
+        "idfg","season","name","team","gb","fb","ld","iffb","gb_fb","ld_pc","gb_pc","fb_pc","iffb_pc","hr_fb",
+        "ifh","ifh_pc","bu","buh","buh_pc","pull_pc","cent_pc","oppo_pc","soft_pc","med_pc","hard_pc","hardhit",
+        "hardhit_pc","ev","la","barrels","barrel_pc","maxev","tto_pc"
+    ],
+    "fangraphs_baserunning_fielding": [
+        "idfg","season","name","team","bsr","spd","wsb","ubr","wgdp"
+    ],
+    "fangraphs_batter_pitch_type_summary": [
+        "idfg","season","name","team","fb_pc","fbv","sl_pc","slv","ch_pc","chv","cb_pc","cbv","sf_pc","sfv","ct_pc","ctv",
+        "kn_pc","knv","xx_pc","po_pc","wfb","wsl","wch","wcb","wsf","wct","wkn","wfb_c","wsl_c","wch_c","wcb_c",
+        "wsf_c","wct_c","wkn_c"
+    ],
+}
 
-pitching_splits = {
-        "fangraphs_pitching_lahman_like": [
-            "idfg", "season", "name", "team", "w", "l", "g", "gs", "cg", "sho", "sv", "ip", "h",
-            "r", "er", "hr", "bb", "so", "hbp", "wp", "bk", "tbf"
-        ],
-        "fangraphs_pitching_standard_ratios": [
-            "idfg", "season", "name", "team", "era", "k_9", "bb_9", "k_bb", "h_9", "hr_9", "avg",
-            "whip", "babip", "lob_pc"
-        ],
-        "fangraphs_pitching_advanced": [
-            "idfg", "season", "name", "team", "war", "fip", "xfip", "siera", "era_minus", "fip_minus", "xfip_minus",
-            "rar", "dollars", "ra9_war"
-        ],
-        "fangraphs_pitching_plate_discipline": [
-            "idfg", "season", "name", "team", "o_swing_pc", "z_swing_pc", "swing_pc", "o_contact_pc",
-            "z_contact_pc", "contact_pc", "zone_pc", "f_strike_pc", "swstr_pc", "cstr_pc", "csw_pc"
-        ],
-        "fangraphs_pitching_batted_ball": [
-            "idfg", "season", "name", "team", "gb_fb", "ld_pc", "gb_pc", "fyb_pc", "iffb_pc", "hr_fb",
-            "pull_pc", "cent_pc", "oppo_pc", "soft_pc", "med_pc", "hard_pc", "ev", "la", "barrels", "barrel_pc",
-            "maxev", "hardhit", "hardhit_pc", "tto_pc"
-        ],
-        "fangraphs_pitching_pitch_type_summary": [
-            "idfg", "season", "name", "team", "fb_pc", "fbv", "sl_pc", "slv", "ct_pc", "ctv", "cb_pc", "cbv",
-            "ch_pc", "chv", "sf_pc", "sfv", "kn_pc", "knv", "xx_pc", "po_pc", "wfb", "wsl", "wct", "wcb", "wch", "wsf",
-            "wkn",
-            "wfb_c", "wsl_c", "wct_c", "wcb_c", "wch_c", "wsf_c", "wkn_c"
-        ]
-    }
+pitching_splits: Dict[str, List[str]] = {
+    "fangraphs_pitching_lahman_like": [
+        "idfg","season","name","team","w","l","g","gs","cg","sho","sv","ip","h","r","er","hr","bb","so","hbp","wp","bk","tbf"
+    ],
+    "fangraphs_pitching_standard_ratios": [
+        "idfg","season","name","team","era","k_9","bb_9","k_bb","h_9","hr_9","avg","whip","babip","lob_pc"
+    ],
+    "fangraphs_pitching_advanced": [
+        "idfg","season","name","team","war","fip","xfip","siera","era_minus","fip_minus","xfip_minus","rar","dollars","ra9_war"
+    ],
+    "fangraphs_pitching_plate_discipline": [
+        "idfg","season","name","team","o_swing_pc","z_swing_pc","swing_pc","o_contact_pc","z_contact_pc",
+        "contact_pc","zone_pc","f_strike_pc","swstr_pc","cstr_pc","csw_pc"
+    ],
+    "fangraphs_pitching_batted_ball": [
+        "idfg","season","name","team","gb_fb","ld_pc","gb_pc","fyb_pc","iffb_pc","hr_fb","pull_pc","cent_pc","oppo_pc",
+        "soft_pc","med_pc","hard_pc","ev","la","barrels","barrel_pc","maxev","hardhit","hardhit_pc","tto_pc"
+    ],
+    "fangraphs_pitching_pitch_type_summary": [
+        "idfg","season","name","team","fb_pc","fbv","sl_pc","slv","ct_pc","ctv","cb_pc","cbv","ch_pc","chv","sf_pc","sfv",
+        "kn_pc","knv","xx_pc","po_pc","wfb","wsl","wct","wcb","wch","wsf","wkn","wfb_c","wsl_c","wct_c","wcb_c","wch_c",
+        "wsf_c","wkn_c"
+    ],
+}
 
-# Helper to split DataFrames by schema mapping (no file I/O)
-def split_dataframe(df, mapping):
-    result = {}
-    for table_name, columns in mapping.items():
-        valid_cols = [col for col in columns if col in df.columns]
-        if len(valid_cols) >= 4:
-            result[table_name] = df[valid_cols].copy()
-    return result
+# ---------------- Split helper ----------------
+def split_dataframe(df: pd.DataFrame, mapping: Dict[str, List[str]]) -> Dict[str, pd.DataFrame]:
+    out: Dict[str, pd.DataFrame] = {}
+    if df.empty:
+        return out
+    for table, cols in mapping.items():
+        valid = [c for c in cols if c in df.columns]
+        if len(valid) >= 4:  # basic sanity
+            out[table] = df[valid].copy()
+    return out
 
-# Create split DataFrames
 batting_dfs = split_dataframe(df_bat, batting_splits)
 pitching_dfs = split_dataframe(df_pitch, pitching_splits)
 
-# Getting rows that have changed in the newest version of the table
-def get_changed_rows(df, table_name, conn):
-    key_cols = ["idfg", "season"]
-    all_cols = df.columns.tolist()
-    non_key_cols = [col for col in all_cols if col not in key_cols]
+# ---------------- Key selection & index checks ----------------
+# Put truly season-aggregated tables here (if any)
+SEASON_ONLY: set[str] = set()  # e.g., {"some_season_summary_table"}
 
-    cursor = conn.cursor()
+def conflict_cols_for(table_name: str, df_cols: List[str]) -> List[str]:
+    if table_name in SEASON_ONLY:
+        return ["idfg", "season"]
+    return ["idfg", "season", "team"] if "team" in df_cols else ["idfg", "season"]
 
-    # Fetch matching rows from DB
-    keys = df[key_cols].drop_duplicates()
-    keys_tuple = [tuple(map(lambda x: x.item() if hasattr(x, "item") else x, row)) for row in keys.to_numpy()]
-    if not keys_tuple:
-        return pd.DataFrame()
-
-    select_sql = f"""
-        SELECT {", ".join(all_cols)}
-        FROM "{table_name}"
-        WHERE ({", ".join(key_cols)}) IN %s
+def has_matching_unique_index(conn, table_name: str, conflict_cols: List[str]) -> bool:
     """
-    try:
-        cursor.execute(select_sql, (tuple(keys_tuple),))
-        db_rows = cursor.fetchall()
-    except Exception as e:
-        print(f"⚠️ Could not check changes for `{table_name}`: {e}")
-        return pd.DataFrame()
+    Returns True if a UNIQUE index/constraint exists with exactly these columns (order matters).
+    """
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT i.relname AS index_name,
+                   array_agg(a.attname ORDER BY a.attnum) AS cols
+            FROM pg_index ix
+            JOIN pg_class i ON i.oid = ix.indexrelid
+            JOIN pg_class t ON t.oid = ix.indrelid
+            JOIN unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord) ON TRUE
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+            WHERE t.relname = %s
+              AND ix.indisunique
+            GROUP BY i.relname
+        """, (table_name,))
+        for _, cols in cur.fetchall():
+            if list(cols) == conflict_cols:
+                return True
+    return False
 
-    # Turn DB result into DataFrame
-    db_df = pd.DataFrame(db_rows, columns=all_cols)
+# ---------------- Change detection ----------------
+def get_changed_rows(df: pd.DataFrame, table_name: str, conn) -> pd.DataFrame:
+    if df.empty:
+        return df
+    key_cols = conflict_cols_for(table_name, df.columns.tolist())
+    non_key_cols = [c for c in df.columns if c not in key_cols]
+
+    with conn.cursor() as cur:
+        keys = df[key_cols].drop_duplicates()
+        keys_tuple = [tuple((x.item() if hasattr(x, "item") else x) for x in row) for row in keys.to_numpy()]
+        if not keys_tuple:
+            return pd.DataFrame()
+
+        select_sql = f"""
+            SELECT {", ".join(f'"{c}"' for c in df.columns)}
+            FROM "{table_name}"
+            WHERE ({", ".join(key_cols)}) IN %s
+        """
+        try:
+            cur.execute(select_sql, (tuple(keys_tuple),))
+            db_rows = cur.fetchall()
+        except Exception as e:
+            print(f"⚠️ Could not check changes for `{table_name}`: {e}")
+            return df  # be conservative: treat all as changed
+
+    db_df = pd.DataFrame(db_rows, columns=list(df.columns))
     if db_df.empty:
         return df  # everything is new
 
     db_df = db_df.sort_values(by=key_cols).reset_index(drop=True)
     df_sorted = df.sort_values(by=key_cols).reset_index(drop=True)
+    changed_mask = ~df_sorted[non_key_cols].eq(db_df[non_key_cols]).all(axis=1)
+    return df_sorted.loc[changed_mask]
 
-    # Compare non-key columns
-    changed_rows = df_sorted[
-        ~df_sorted[non_key_cols].eq(db_df[non_key_cols]).all(axis=1)
-    ]
-    return changed_rows
+# ---------------- UPSERT ----------------
+def chunk(iterable: Iterable[Tuple], size: int) -> Iterable[List[Tuple]]:
+    batch: List[Tuple] = []
+    for item in iterable:
+        batch.append(item)
+        if len(batch) >= size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
 
-# Safe Upsert of the table in the aws rds
-def upsert_table(df, table_name, conn):
+def upsert_table(df: pd.DataFrame, table_name: str, conn, batch_size: int = 5000) -> None:
     if df.empty:
         print(f"⚠️ Skipping empty table: {table_name}")
         return
@@ -282,62 +293,68 @@ def upsert_table(df, table_name, conn):
         return
 
     print(f"🔍 {len(changed)} rows in `{table_name}` will be updated.")
+    preview_cols = [c for c in ["idfg","season","name","team"] if c in changed.columns]
+    if preview_cols:
+        print(changed[preview_cols].head(5))
 
-    # Show preview of changed rows
-    preview_cols = ["idfg", "season"]
-    if "name" in changed.columns:
-        preview_cols += ["name"]
-    if "team" in changed.columns:
-        preview_cols += ["team"]
-    print(changed[preview_cols].head(5))  # Just show top 5 for readability
-
-    key_cols = ["idfg", "season"]
     all_cols = list(df.columns)
-    non_key_cols = [col for col in all_cols if col not in key_cols]
+    key_cols = conflict_cols_for(table_name, all_cols)
+    non_key_cols = [c for c in all_cols if c not in key_cols]
 
-    col_list = ", ".join([f'"{col}"' for col in all_cols])
-    set_clause = ", ".join([
-        f'"{col}" = EXCLUDED."{col}"' for col in non_key_cols
-    ])
-    where_clause = " OR ".join([
-        f'"{table_name}"."{col}" IS DISTINCT FROM EXCLUDED."{col}"' for col in non_key_cols
-    ])
+    # Sanity: ensure key columns exist
+    missing = [c for c in key_cols if c not in all_cols]
+    if missing:
+        raise ValueError(f"`{table_name}` upsert missing key columns in payload: {missing}")
+
+    # Verify unique index exists for conflict target
+    if not has_matching_unique_index(conn, table_name, key_cols):
+        cols = ", ".join(key_cols)
+        idx_name = f"ux_{table_name}_{'_'.join(key_cols)}"
+        raise RuntimeError(
+            f"🚫 No UNIQUE index/constraint matches ON CONFLICT ({cols}) on `{table_name}`.\n"
+            f"Create it first:\n"
+            f"  CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS {idx_name}\n"
+            f"  ON {table_name} ({cols});"
+        )
+
+    col_list = ", ".join([f'"{c}"' for c in all_cols])
+    set_clause = ", ".join([f'"{c}" = EXCLUDED."{c}"' for c in non_key_cols])
+    where_clause = " OR ".join([f'"{table_name}"."{c}" IS DISTINCT FROM EXCLUDED."{c}"' for c in non_key_cols])
 
     sql = f"""
         INSERT INTO "{table_name}" ({col_list})
         VALUES %s
-        ON CONFLICT (idfg, season) DO UPDATE
+        ON CONFLICT ({", ".join(key_cols)}) DO UPDATE
         SET {set_clause}
         WHERE {where_clause}
     """
 
-    values = [tuple(row) for row in df.to_numpy()]
-    cursor = conn.cursor()
+    values_iter = (tuple(row) for row in changed.itertuples(index=False, name=None))
+    cur = conn.cursor()
+    total = 0
     try:
-        print(f"🚀 Running UPSERT on `{table_name}` with {len(values)} total rows...")
-        execute_values(cursor, sql, values)
+        print(f"🚀 Running UPSERT on `{table_name}` with {len(changed)} changed row(s) (batch={batch_size})...")
+        for batch in chunk(values_iter, batch_size):
+            execute_values(cur, sql, batch)
+            total += len(batch)
         conn.commit()
-        print(f"✅ Successfully updated {len(changed)} row(s) in `{table_name}`")
+        print(f"✅ Successfully upserted {total} row(s) into `{table_name}`")
     except Exception as e:
-        print(f"❌ Failed to update `{table_name}`: {e}")
         conn.rollback()
+        print(f"❌ Failed to update `{table_name}`: {e}")
+        raise
     finally:
-        cursor.close()
+        cur.close()
 
+# ---------------- Main ----------------
 if __name__ == "__main__":
     print("🔌 Connecting to AWS RDS...")
-    conn = psycopg2.connect(**DB_PARAMS)
+    with psycopg2.connect(**DB_PARAMS) as conn:
+        processed_tables: Dict[str, pd.DataFrame] = {**batting_dfs, **pitching_dfs}
+        print(f"🧩 Found {len(processed_tables)} FanGraphs tables to process")
 
-    # Merge all split tables
-    processed_tables = {**batting_dfs, **pitching_dfs}
-    print(f"🧩 Found {len(processed_tables)} FanGraphs tables to process")
+        for table_name, df in processed_tables.items():
+            print(f"📁 Processing `{table_name}` with {len(df)} rows")
+            upsert_table(df, table_name, conn)
 
-    for table_name, df in processed_tables.items():
-        print(f"📁 Processing `{table_name}` with {len(df)} rows")
-        upsert_table(df, table_name, conn)
-
-    conn.close()
     print("✅ All tables processed and connection closed.")
-
-
-

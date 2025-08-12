@@ -452,7 +452,7 @@ ops (numeric) – OBP + SLG.
 iso (numeric) – Isolated power (SLG–AVG).
 babip (numeric) – Batting avg on balls in play.
 bb_pc (numeric) – Walk rate (BB/PA).
-k_pc (numeric) – Strikeout rate (SO/PA).
+k_pc (numeric) – Strikeout percentage (SO/PA).
 bb_k (numeric) – Walk-to-strikeout ratio.
 gdp (integer) – Grounded into double plays.
 
