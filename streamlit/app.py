@@ -123,13 +123,16 @@ def render_home():
     """, unsafe_allow_html=True)
 
     st.markdown("### What You Can Do")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("#### Ask Questions")
-        st.markdown("- 'Show Shohei Ohtani\\'s stats in 2022'\n- 'Top 10 home run hitters since 2010'\n- 'Which pitchers have the biggest single-season gap between FIP and ERA since 2015?'")
+        st.markdown("- 'What were Shohei Ohtani\\'s counting stats in 2022'\n- 'Who are the top 10 home run hitters since 2010'\n- 'Which pitchers have the biggest single-season gap between FIP and ERA since 2015?'")
     with col2:
         st.markdown("#### Updated Daily")
         st.markdown("- Powered by AWS + GitHub Actions\n- Data from FanGraphs & Lahman\n- Always current")
+    with col3:
+        st.markdown("### Tips!")
+        st.markdown("- Be Creative \n- Rephrase questions \n - Ask for qualified players")
 
     st.markdown("---")
     st.markdown("### Read Me")

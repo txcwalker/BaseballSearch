@@ -53,8 +53,9 @@ st.write("""
 - "Who led or Who leads" will give only the top result. For a list of top results use something like "What Players"
 - When both pitchers and hitters can have the same statistic (like strikeout) be sure to specify the position!
 - If the model fails but you think it should not have, try rephrasing the question!
-- Type in complete sentences withe proper grammar
+- Type in complete sentences wit the proper grammar
 - This is a beta version — we’re still improving how questions are interpreted!
+- The app should infer only qualified players but sometimes, it forgets, so if you see weird results, add " Among qualified players/pitchers/hitters/etc"
 """)
 
 st.markdown("### Coming Soon")
