@@ -1,12 +1,13 @@
 # app.py
 import os, sys
+from pathlib import Path
+
 import streamlit as st
 import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
-from pathlib import Path
 
-# 0) Page config MUST be first Streamlit call
+# 0) Page config MUST be the first Streamlit call
 st.set_page_config(page_title="Welcome to Databaseball", layout="wide")
 
 # Add project root to import path (so we can import nlp.*)
@@ -22,8 +23,52 @@ from nlp.sql_render import lint_sql, enforce_leaders_invariants
 # Setting difference for debugging UI
 DEBUG_UI = os.getenv("DBBALL_DEBUG_UI", "0") == "1"
 
+# --- env helpers ---
+def env(key: str, default=None):
+    """Read from Streamlit secrets first (Cloud), then environment."""
+    try:
+        return st.secrets.get(key, os.getenv(key, default))  # st.secrets may not exist locally
+    except Exception:
+        return os.getenv(key, default)
 
-# --- helpers ---
+# Load local .envs if present (harmless on Cloud)
+load_dotenv(Path(__file__).resolve().parents[1] / ".env.awsrds")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env.gemini")
+
+DB_PARAMS = {
+    "host": env("AWSHOST"),
+    "port": env("AWSPORT"),
+    "dbname": env("AWSDATABASE"),
+    "user": env("AWSUSER"),
+    "password": env("AWSPASSWORD"),
+}
+
+# --- cached resources & helpers ---
+@st.cache_resource(show_spinner=False)
+def get_stat_catalog():
+    # Short connection + statement timeouts so the app never hangs
+    conn = psycopg2.connect(
+        **DB_PARAMS,
+        connect_timeout=5,
+        options="-c statement_timeout=5000"
+    )
+    try:
+        return init_fastpath(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+@st.cache_data(show_spinner=False, ttl=300)
+def run_sql(sql: str, params: dict | None = None):
+    with psycopg2.connect(
+        **DB_PARAMS,
+        connect_timeout=5,
+        options="-c statement_timeout=15000"
+    ) as conn:
+        return pd.read_sql_query(sql, conn, params=params or {})
+
 def looks_like_sql(s: str) -> bool:
     lo = (s or "").lstrip().lower()
     return lo.startswith((
@@ -46,38 +91,14 @@ def style_dataframe(df: pd.DataFrame):
                 ('background-color', '#003f5c'), ('color', 'white'), ('font-size', '15px')
             ]}]))
 
-# Load AWS RDS environment
-load_dotenv(Path(__file__).resolve().parents[1] / ".env.awsrds")
+# IMPORTANT: Do NOT call get_stat_catalog() at import time (prevents "baking" hangs)
+STAT_CATALOG = None
 
-# Load Gemini env file
-load_dotenv(Path(__file__).resolve().parents[1] / ".env.gemini")
-
-DB_PARAMS = {
-    "host": os.getenv("AWSHOST"),
-    "port": os.getenv("AWSPORT"),
-    "dbname": os.getenv("AWSDATABASE"),
-    "user": os.getenv("AWSUSER"),
-    "password": os.getenv("AWSPASSWORD"),
-}
-
-@st.cache_resource
-def get_stat_catalog():
-    with psycopg2.connect(**DB_PARAMS) as conn:
-        return init_fastpath(conn)
-
-try:
-    STAT_CATALOG = get_stat_catalog()
-except Exception as e:
-    st.warning(f"Fast-path disabled (catalog init failed): {e}")
-    STAT_CATALOG = None
-
-@st.cache_data(show_spinner=False, ttl=300)
-def run_sql(sql: str, params: dict | None = None):
-    with psycopg2.connect(**DB_PARAMS) as conn:
-        return pd.read_sql_query(sql, conn, params=params or {})
 
 # ------------------ PAGE: Home (callable) ------------------
 def render_home():
+    global STAT_CATALOG
+
     render_sidebar()
 
     st.markdown("""
@@ -103,7 +124,17 @@ def render_home():
     st.markdown("### Read Me")
     st.page_link("pages/how_to_use.py", label="❓ How to Use")
 
-    # Load schema/prompt/templates
+    # Lazy-init the fast-path catalog with a short timeout (won't hang the app)
+    if STAT_CATALOG is None:
+        try:
+            with st.status("Initializing fast-path (short DB check)…", state="running"):
+                STAT_CATALOG = get_stat_catalog()
+            st.toast("Fast-path enabled ✅", icon="✅")
+        except Exception as e:
+            st.info("Running without fast-path (DB unavailable).", icon="ℹ️")
+            STAT_CATALOG = None
+
+    # Load schema/prompt/templates after UI draws (local, no network)
     schema_str = gsql.load_schema()
     prompt_template = gsql.load_prompt_template()
     templates_yaml = gsql.load_templates_yaml()
@@ -134,9 +165,9 @@ def render_home():
                     fast_sql = lint_sql(fast_sql)
                     fast_sql = enforce_leaders_invariants(fast_sql)
                     sql_query = fast_sql
-                    st.info("Using fast‑path leaders (validated).")
+                    st.info("Using fast-path leaders (validated).")
                 except Exception as e:
-                    st.warning(f"Fast‑path rejected ({e}); falling back to templates.")
+                    st.warning(f"Fast-path rejected ({e}); falling back to templates.")
                     sql_query = None
 
         # 1) templates
@@ -205,14 +236,15 @@ def _maybe_page(rel_path: str, title: str):
     fp = PAGES_DIR / Path(rel_path).name
     return st.Page(f"pages/{fp.name}", title=title) if fp.exists() else None
 
-home_page   = st.Page(render_home, title="Home")
-howto_page  = _maybe_page("how_to_use.py", "How to Use")
-about_page  = _maybe_page("about.py", "About")
-contact_page= _maybe_page("contact.py", "Contact")
+home_page    = st.Page(render_home, title="Home")
+howto_page   = _maybe_page("how_to_use.py", "How to Use")
+about_page   = _maybe_page("about.py", "About")
+contact_page = _maybe_page("contact.py", "Contact")
 
 pages = [home_page]
 for p in (howto_page, about_page, contact_page):
-    if p: pages.append(p)
+    if p:
+        pages.append(p)
 
 # Only add Test Mode if env flag is set AND file exists
 test_page = _maybe_page("test_mode.py", "Test Mode")
