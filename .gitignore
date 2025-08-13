@@ -11,6 +11,7 @@ secrets/
 *.pyo
 *.pyd
 *.db
+.ssh/
 __pycache__/
 
 api
@@ -20,6 +21,7 @@ logs
 notebooks
 scratch
 streamlit/components
+test_mode
 utils.py
 
 
