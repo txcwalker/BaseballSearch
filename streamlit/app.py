@@ -15,14 +15,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # --- env helpers & flags ---
 def env(key: str, default=None):
-    """Read from Streamlit secrets first (Cloud), then environment."""
     try:
         return st.secrets.get(key, os.getenv(key, default))
     except Exception:
         return os.getenv(key, default)
 
-DEBUG_UI   = env("DBBALL_DEBUG_UI", "0") == "1"   # show extra debug controls
-SAFE_START = env("DBBALL_SAFE_START", "0") == "1" # skip DB/LLM init on first load
+DEBUG_UI   = env("DBBALL_DEBUG_UI", "0") == "1"   # show extra debug controls/messages if 1
+SAFE_START = env("DBBALL_SAFE_START", "0") == "1" # skip DB/LLM init on first load if 1
 
 # Load local .envs if present (harmless on Cloud)
 load_dotenv(Path(__file__).resolve().parents[1] / ".env.awsrds")
@@ -39,7 +38,6 @@ DB_PARAMS = {
 # --- cached resources & helpers ---
 @st.cache_resource(show_spinner=False)
 def get_stat_catalog(_init_fastpath_fn):
-    # Short connection + statement timeouts so the app never hangs
     conn = psycopg2.connect(
         **DB_PARAMS,
         connect_timeout=5,
@@ -74,18 +72,7 @@ def title_case_columns(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [col.replace("_", " ").title() if isinstance(col, str) else col for col in df.columns]
     return df
 
-def style_dataframe(df: pd.DataFrame):
-    return (df.style
-            .set_properties(**{
-                'background-color': '#fdfdfd','color': '#111',
-                'border-color': '#ccc','font-size': '14px','text-align': 'left'
-            })
-            .set_table_styles([{'selector': 'th','props': [
-                ('background-color', '#003f5c'), ('color', 'white'), ('font-size', '15px')
-            ]}]))
-
-# IMPORTANT: Do NOT import nlp.* at module import time.
-# We lazy-import below so any import error is visible in the UI instead of hanging the process.
+# Lazy imports for NLP stack (avoid heavy work at import time)
 _NLP_LOADED = False
 gsql = None
 init_fastpath = None
@@ -95,7 +82,6 @@ lint_sql = None
 enforce_leaders_invariants = None
 
 def load_nlp_modules():
-    """Lazy import all nlp modules. Raises on failure so we can show errors on screen."""
     global _NLP_LOADED, gsql, init_fastpath, try_fastpath, route_template, lint_sql, enforce_leaders_invariants
     if _NLP_LOADED:
         return
@@ -111,8 +97,7 @@ def load_nlp_modules():
     enforce_leaders_invariants = getattr(sr, "enforce_leaders_invariants")
     _NLP_LOADED = True
 
-# No DB / LLM calls at import time
-STAT_CATALOG = None
+STAT_CATALOG = None  # no DB/LLM calls at import time
 
 # ------------------ PAGE: Home (callable) ------------------
 def render_home():
@@ -123,7 +108,8 @@ def render_home():
         from render_sidebar import render_sidebar
         render_sidebar()
     except Exception as e:
-        st.error(f"Sidebar failed to load: {e}")
+        if DEBUG_UI:
+            st.error(f"Sidebar failed to load: {e}")
 
     # Header
     st.markdown("""
@@ -135,8 +121,6 @@ def render_home():
             <p style='font-size: 1.3em; color: #444;'>Ask questions. Explore stats. Discover the game.</p>
         </div>
     """, unsafe_allow_html=True)
-
-    st.caption(f"Python {os.sys.version.split()[0]} • SAFE_START={int(SAFE_START)} • DEBUG_UI={int(DEBUG_UI)}")
 
     st.markdown("### What You Can Do")
     col1, col2 = st.columns(2)
@@ -151,31 +135,35 @@ def render_home():
     st.markdown("### Read Me")
     st.page_link("pages/how_to_use.py", label="How to Use")
 
-    # Lazy import NLP stack
+    # NLP stack
     try:
         load_nlp_modules()
     except Exception as e:
-        st.error(f"Failed to load NLP modules (nlp/*). {e}")
+        st.error("A required module failed to load.")
+        if DEBUG_UI:
+            st.exception(e)
         st.stop()
 
-    # Optional: lazy-init the fast-path catalog (DB) unless SAFE_START
+    # Fast-path catalog (silent init; only logs in DEBUG)
     if not SAFE_START and STAT_CATALOG is None:
         try:
-            with st.status("Initializing fast-path (short DB check)…", state="running"):
-                STAT_CATALOG = get_stat_catalog(init_fastpath)
-            st.success("Fast-path enabled.")
+            STAT_CATALOG = get_stat_catalog(init_fastpath)
         except Exception as e:
-            st.info(f"Fast-path init skipped: {e}")
+            if DEBUG_UI:
+                st.info(f"Fast-path init skipped: {e}")
             STAT_CATALOG = None
 
-    # Load schema/prompt/templates AFTER UI draws (pure local)
+    # Load schema/prompt/templates (local)
     try:
         schema_str = gsql.load_schema()
         prompt_template = gsql.load_prompt_template()
         templates_yaml = gsql.load_templates_yaml()
-        st.caption(f"Loaded templates: {len(templates_yaml.get('templates', {}))}")
+        if DEBUG_UI:
+            st.caption(f"Loaded templates: {len(templates_yaml.get('templates', {}))}")
     except Exception as e:
-        st.error(f"Failed to load schema/prompts/templates: {e}")
+        st.error("Failed to load configuration.")
+        if DEBUG_UI:
+            st.exception(e)
         st.stop()
 
     # Controls
@@ -185,7 +173,7 @@ def render_home():
     if DEBUG_UI:
         show_prompt = st.checkbox("Show LLM prompt (debug)", value=False)
 
-    if SAFE_START:
+    if SAFE_START and DEBUG_UI:
         st.warning("SAFE_START is enabled — DB/LLM calls are skipped until you turn this off.")
 
     submit = st.button("Generate SQL and Run")
@@ -206,15 +194,18 @@ def render_home():
                     fast_sql = lint_sql(fast_sql)
                     fast_sql = enforce_leaders_invariants(fast_sql)
                     sql_query = fast_sql
-                    st.info("Using fast-path leaders (validated).")
+                    if DEBUG_UI:
+                        st.info("Using fast-path leaders (validated).")
                 except Exception as e:
-                    st.warning(f"Fast-path rejected ({e}); falling back to templates.")
+                    if DEBUG_UI:
+                        st.warning(f"Fast-path rejected ({e}); falling back to templates.")
                     sql_query = None
 
         # 1) templates
         if sql_query is None and use_templates:
             tname, tparams = route_template(norm_q)
-            st.caption(f"Template route preview: {tname or '—'}  {tparams or ''}")
+            if DEBUG_UI:
+                st.caption(f"Template route preview: {tname or '—'}  {tparams or ''}")
             try:
                 sql_query, bound_params, source = gsql.get_sql_and_params(
                     user_question=norm_q,
@@ -225,22 +216,27 @@ def render_home():
                     season=season,
                     preset_sql=""
                 )
-                st.info(f"Using {source}.")
+                # Clean up template SQL just like model/fast-path
+                sql_query = lint_sql(sql_query)
+                sql_query = enforce_leaders_invariants(sql_query)
+                if DEBUG_UI:
+                    st.info(f"Using {source}.")
             except Exception as e:
                 sql_query, bound_params = None, {}
-                st.warning(f"Template route failed: {e}")
+                if DEBUG_UI:
+                    st.warning(f"Template route failed: {e}")
 
         # 2) LLM (guarded)
         if sql_query is None:
             if SAFE_START:
-                st.error("SAFE_START is enabled; LLM calls disabled. Turn off SAFE_START to allow LLM generation.")
+                st.error("Cannot use the model while SAFE_START is enabled.")
                 st.stop()
 
             full_prompt = gsql.build_prompt(
                 norm_q, schema_str, prompt_template, season, current_year=gsql.CURRENT_YEAR
             )
             if DEBUG_UI and show_prompt:
-                with st.expander("Show prompt sent to LLM", expanded=False):
+                with st.expander("Prompt sent to LLM", expanded=False):
                     st.code(full_prompt, language="markdown")
 
             sql_query = gsql.get_sql_from_gemini(full_prompt)
@@ -251,9 +247,21 @@ def render_home():
                 )
                 action = gsql.handle_model_response(sql_query, season)
             if action and action != "__REPROMPT__":
-                st.error(action); st.stop()
+                st.error("The model response was rejected.")
+                if DEBUG_UI:
+                    st.info(action)
+                st.stop()
             if not looks_like_sql(sql_query):
-                st.error("I couldn’t generate executable SQL from that question."); st.stop()
+                st.error("Could not generate executable SQL for that question.")
+                st.stop()
+
+            # Normalize/clean model SQL
+            try:
+                sql_query = lint_sql(sql_query)
+                sql_query = enforce_leaders_invariants(sql_query)
+            except Exception as e:
+                if DEBUG_UI:
+                    st.warning(f"Post-processing of model SQL failed: {e}")
 
         if DEBUG_UI and st.toggle("Show generated SQL", value=False):
             st.code(sql_query, language="sql")
@@ -262,21 +270,18 @@ def render_home():
         try:
             df_result = run_sql(sql_query, bound_params)
             df_result = title_case_columns(df_result)
-            st.success(f"Query successful! Returned {len(df_result):,} rows.")
-            st.dataframe(df_result)
+            st.dataframe(df_result, use_container_width=True)
             csv = df_result.to_csv(index=False).encode("utf-8")
             st.download_button("Download CSV", csv, file_name="results.csv", mime="text/csv")
         except Exception as e:
+            st.error("Query failed.")
             if DEBUG_UI:
-                st.error(f"Error running PostgreSQL query: {e}")
+                st.exception(e)
                 if st.toggle("Show failed SQL?", value=False):
                     st.code(sql_query, language="sql")
-            else:
-                st.error("Something went wrong running your query.")
 
 
 # ------------------ NAVIGATION ------------------
-# Build Page objects (conditionally include file pages if they exist)
 PAGES_DIR = Path(__file__).parent / "pages"
 
 def _maybe_page(rel_path: str, title: str):
