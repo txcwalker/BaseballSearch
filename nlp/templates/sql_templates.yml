@@ -1,160 +1,191 @@
-version: 1
+leaders_batting_counting:
+  description: "Top N leaders for a counting batting stat with ties (traded-safe)"
+  patterns:
+    - "(?i)(?:leaders?|top\\s*(?P<top_n>\\d+))\\s+in\\s+(?P<stat_label>hr|home runs?)\\s+(?:in|for)\\s+(?P<season>\\d{4})"
+    - "(?i)who\\s+(?:leads?|are\\s+the\\s+leaders?).*\\b(?P<stat_label>hr|home\\s*runs?)\\b.*\\b(?P<season>\\d{4})"
+    - "(?i)most\\s+(?P<stat_label>hr|home\\s*runs?)\\s+(?:in|for)\\s+(?P<season>\\d{4})"
+  params: ["season", "top_n", "stat_col", "stat_label"]
+  defaults: { top_n: 10, stat_col: "hr" }
+  param_types: { season: int, top_n: int }
+  sql: |
+    WITH base AS (
+      SELECT DISTINCT ON (fbl.idfg, fbl.season, TRIM(fbl.team))
+             fbl.idfg,
+             fbl.season,
+             TRIM(fbl.team) AS team,
+             fbl.name,
+             {{ stat_col }} AS stat,
+             fbl.pa,
+             fbl.g
+      FROM fangraphs_batting_lahman_like fbl
+      WHERE season = %(season)s
+      ORDER BY fbl.idfg, fbl.season, TRIM(fbl.team), fbl.pa DESC, fbl.g DESC, {{ stat_col }} DESC
+    ),
+    player AS (
+      SELECT
+        idfg,
+        MAX(name) AS name,
+        COALESCE(
+          MAX(stat) FILTER (WHERE team = 'TOT'),
+          SUM(stat) FILTER (WHERE team NOT IN ('TOT','---'))
+        )::numeric AS "{{ stat_label }}"
+      FROM base
+      GROUP BY idfg
+    )
+    SELECT name, "{{ stat_label }}"
+    FROM player
+    ORDER BY "{{ stat_label }}" DESC, name ASC
+    FETCH FIRST %(top_n)s ROWS WITH TIES;
 
-fragments:
-  not_tot_team: "team <> 'TOT'"
-  season_filter: "season = {{ season }}"
 
-templates:
+leaders_pitching_counting:
+  description: "Top N leaders for a counting pitching stat with ties (traded-safe)"
+  params: ["season", "top_n", "stat_col", "stat_label"]
+  defaults: { top_n: 10 }
+  param_types: { season: int, top_n: int }
+  sql: |
+    WITH base AS (
+      SELECT DISTINCT ON (fpl.idfg, fpl.season, TRIM(fpl.team))
+             fpl.idfg,
+             fpl.season,
+             TRIM(fpl.team) AS team,
+             fpl.name,
+             {{ stat_col }} AS stat,
+             fpl.ip,
+             fpl.g
+      FROM fangraphs_pitching_lahman_like fpl
+      WHERE season = %(season)s
+      ORDER BY fpl.idfg, fpl.season, TRIM(fpl.team), fpl.ip DESC, fpl.g DESC, {{ stat_col }} DESC
+    ),
+    pitcher AS (
+      SELECT
+        idfg,
+        MAX(name) AS name,
+        COALESCE(
+          MAX(stat) FILTER (WHERE team = 'TOT'),
+          SUM(stat) FILTER (WHERE team NOT IN ('TOT','---'))
+        )::numeric AS "{{ stat_label }}"
+      FROM base
+      GROUP BY idfg
+    )
+    SELECT name, "{{ stat_label }}"
+    FROM pitcher
+    ORDER BY "{{ stat_label }}" DESC, name ASC
+    FETCH FIRST %(top_n)s ROWS WITH TIES;
 
-  leaders_batting_counting:
-    description: "Top N leaders for a counting batting stat with ties"
-    # Regex patterns for match_template_data_driven (optional if only using fast-path)
-    patterns:
-      - "(?i)leaders? in (?P<stat_label>hr|home runs?) in (?P<season>\\d{4})"
-    params: ["season", "top_n", "stat_col", "stat_label"]
-    defaults:
-      top_n: 10
-      stat_col: "hr"
-    param_types:
-      season: int
-      top_n: int
-    sql: |
-      WITH player AS (
-        SELECT idfg, MAX(name) AS name, SUM({{ stat_col }})::numeric AS {{ stat_label }}
-        FROM fangraphs_batting_lahman_like
-        WHERE {{ fragments.season_filter }} AND {{ fragments.not_tot_team }}
-        GROUP BY idfg
-      ),
-      ranked AS (
-        SELECT name, {{ stat_label }},
-               DENSE_RANK() OVER (ORDER BY {{ stat_label }} DESC) AS rnk
-        FROM player
-      )
-      SELECT name, {{ stat_label }}
-      FROM ranked
-      WHERE rnk <= {{ top_n }}
-      ORDER BY {{ stat_label }} DESC, name;
 
-  leaders_pitching_rate_low_is_best:
-    description: "Top N leaders for a pitching rate stat where lower is better"
-    patterns:
-      - "(?i)lowest (?P<stat_label>era|fip) in (?P<season>\\d{4})"
-    params: ["season", "top_n", "stat_col", "stat_label"]
-    defaults:
-      top_n: 10
-      stat_col: "era"
-    param_types:
-      season: int
-      top_n: int
-    sql: |
-      WITH pitcher AS (
-        SELECT idfg, MAX(name) AS name, AVG({{ stat_col }})::numeric AS {{ stat_label }}
-        FROM fangraphs_pitching_lahman_like
-        WHERE {{ fragments.season_filter }} AND {{ fragments.not_tot_team }}
-        GROUP BY idfg
-      ),
-      ranked AS (
-        SELECT name, {{ stat_label }},
-               DENSE_RANK() OVER (ORDER BY {{ stat_label }} ASC) AS rnk
-        FROM pitcher
-      )
-      SELECT name, {{ stat_label }}
-      FROM ranked
-      WHERE rnk <= {{ top_n }}
-      ORDER BY {{ stat_label }} ASC, name;
+leaders_batting_rate:
+  description: "Top N leaders for a batting rate stat with ties (weighted, traded-safe)"
+  params: ["season", "top_n", "stat_col", "stat_label"]
+  defaults: { top_n: 10 }
+  param_types: { season: int, top_n: int }
+  sql: |
+    WITH base AS (
+      SELECT DISTINCT ON (fbl.idfg, fbl.season, TRIM(fbl.team))
+             fbl.idfg,
+             fbl.season,
+             TRIM(fbl.team) AS team,
+             fbl.name,
+             {{ stat_col }} AS stat,
+             fbl.pa,
+             fbl.g
+      FROM fangraphs_batting_lahman_like fbl
+      WHERE season = %(season)s
+      ORDER BY fbl.idfg, fbl.season, TRIM(fbl.team), fbl.pa DESC, fbl.g DESC
+    ),
+    player AS (
+      SELECT
+        idfg,
+        MAX(name) AS name,
+        COALESCE(
+          MAX(stat) FILTER (WHERE team = 'TOT'),
+          SUM(stat * pa)::numeric / NULLIF(SUM(pa), 0)
+        ) AS "{{ stat_label }}"
+      FROM base
+      GROUP BY idfg
+    )
+    SELECT name, "{{ stat_label }}"
+    FROM player
+    ORDER BY "{{ stat_label }}" DESC, name ASC
+    FETCH FIRST %(top_n)s ROWS WITH TIES;
 
-  leaders_batting_rate:
-    description: "Top N leaders for a rate batting stat (AVG/OBP/SLG/OPS) with ties"
-    params: ["season", "top_n", "stat_col", "stat_label"]
-    defaults:
-      top_n: 10
-    param_types:
-      season: int
-      top_n: int
-    sql: |
-      WITH player AS (
-        SELECT idfg,
-               MAX(name) AS name,
-               AVG({{ stat_col }})::numeric AS {{ stat_label }}
-        FROM fangraphs_batting_lahman_like
-        WHERE {{ fragments.season_filter }} AND {{ fragments.not_tot_team }}
-        GROUP BY idfg
-      ),
-      ranked AS (
-        SELECT name,
-               {{ stat_label }},
-               DENSE_RANK() OVER (ORDER BY {{ stat_label }} DESC) AS rnk
-        FROM player
-      )
-      SELECT name, {{ stat_label }}
-      FROM ranked
-      WHERE rnk <= {{ top_n }}
-      ORDER BY {{ stat_label }} DESC, name;
 
-  leaders_batting_qualified:
-    description: "Top N leaders with PA qualification (3.1 * max team games) with ties"
-    params: ["season", "top_n", "stat_agg", "stat_label"]
-    defaults:
-      top_n: 10
-    param_types:
-      season: int
-      top_n: int
-    sql: |
-      WITH tg AS (
-        SELECT MAX(g) AS max_games
-        FROM fangraphs_batting_lahman_like
-        WHERE {{ fragments.season_filter }} AND {{ fragments.not_tot_team }}
-      ),
-      player AS (
-        SELECT idfg,
-               MAX(name) AS name,
-               SUM(pa) AS pa,
-               {{ stat_agg }} AS {{ stat_label }}
-        FROM fangraphs_batting_lahman_like
-        WHERE {{ fragments.season_filter }} AND {{ fragments.not_tot_team }}
-        GROUP BY idfg
-      ),
-      qualified AS (
-        SELECT p.*
-        FROM player p, tg
-        WHERE p.pa >= (3.1 * tg.max_games)
-      ),
-      ranked AS (
-        SELECT name,
-               {{ stat_label }},
-               DENSE_RANK() OVER (ORDER BY {{ stat_label }} DESC) AS rnk
-        FROM qualified
-      )
-      SELECT name, {{ stat_label }}
-      FROM ranked
-      WHERE rnk <= {{ top_n }}
-      ORDER BY {{ stat_label }} DESC, name;
+leaders_pitching_rate_low_is_best:
+  description: "Top N leaders for a pitching rate stat (lower is better) with ties (weighted, traded-safe)"
+  params: ["season", "top_n", "stat_col", "stat_label"]
+  defaults: { top_n: 10, stat_col: "era" }
+  param_types: { season: int, top_n: int }
+  sql: |
+    WITH base AS (
+      SELECT DISTINCT ON (fpl.idfg, fpl.season, TRIM(fpl.team))
+             fpl.idfg,
+             fpl.season,
+             TRIM(fpl.team) AS team,
+             fpl.name,
+             {{ stat_col }} AS stat,
+             fpl.ip,
+             fpl.g
+      FROM fangraphs_pitching_lahman_like fpl
+      WHERE season = %(season)s
+      ORDER BY fpl.idfg, fpl.season, TRIM(fpl.team), fpl.ip DESC, fpl.g DESC
+    ),
+    pitcher AS (
+      SELECT
+        idfg,
+        MAX(name) AS name,
+        COALESCE(
+          MAX(stat) FILTER (WHERE team = 'TOT'),
+          SUM(stat * ip)::numeric / NULLIF(SUM(ip), 0)
+        ) AS "{{ stat_label }}"
+      FROM base
+      GROUP BY idfg
+    )
+    SELECT name, "{{ stat_label }}"
+    FROM pitcher
+    ORDER BY "{{ stat_label }}" ASC, name ASC
+    FETCH FIRST %(top_n)s ROWS WITH TIES;
 
-  leaders_pitching_counting:
-    description: "Top N leaders for a counting pitching stat (SO/BB/SV/etc.) with ties"
-    params: ["season", "top_n", "stat_col", "stat_label"]
-    defaults:
-      top_n: 10
-    param_types:
-      season: int
-      top_n: int
-    sql: |
-      WITH pitcher AS (
-        SELECT idfg,
-               MAX(name) AS name,
-               SUM({{ stat_col }})::numeric AS {{ stat_label }}
-        FROM fangraphs_pitching_lahman_like
-        WHERE {{ fragments.season_filter }} AND {{ fragments.not_tot_team }}
-        GROUP BY idfg
-      ),
-      ranked AS (
-        SELECT name,
-               {{ stat_label }},
-               DENSE_RANK() OVER (ORDER BY {{ stat_label }} DESC) AS rnk
-        FROM pitcher
-      )
-      SELECT name, {{ stat_label }}
-      FROM ranked
-      WHERE rnk <= {{ top_n }}
-      ORDER BY {{ stat_label }} DESC, name;
-
+leaders_batting_qualified:
+  description: "Top N leaders with PA qualification (3.1 * max team games) with ties (traded-safe)"
+  params: ["season", "top_n", "stat_agg", "stat_label"]
+  defaults: { top_n: 10 }
+  param_types: { season: int, top_n: int }
+  sql: |
+    WITH tg AS (
+      SELECT MAX(g) AS max_games
+      FROM fangraphs_batting_lahman_like
+      WHERE season = %(season)s
+    ),
+    base AS (
+      SELECT DISTINCT ON (fbl.idfg, fbl.season, TRIM(fbl.team))
+             fbl.idfg,
+             fbl.season,
+             TRIM(fbl.team) AS team,
+             fbl.name,
+             fbl.pa,
+             fbl.g
+      FROM fangraphs_batting_lahman_like fbl
+      WHERE season = %(season)s
+      ORDER BY fbl.idfg, fbl.season, TRIM(fbl.team), fbl.pa DESC, fbl.g DESC
+    ),
+    player AS (
+      SELECT
+        idfg,
+        MAX(name) AS name,
+        COALESCE(
+          MAX(pa) FILTER (WHERE team = 'TOT'),
+          SUM(pa) FILTER (WHERE team NOT IN ('TOT','---'))
+        ) AS pa_total,
+        {{ stat_agg }} AS "{{ stat_label }}"
+      FROM base
+      GROUP BY idfg
+    ),
+    qualified AS (
+      SELECT p.*
+      FROM player p, tg
+      WHERE p.pa_total >= (3.1 * tg.max_games)
+    )
+    SELECT name, "{{ stat_label }}"
+    FROM qualified
+    ORDER BY "{{ stat_label }}" DESC, name ASC
+    FETCH FIRST %(top_n)s ROWS WITH TIES;

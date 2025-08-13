@@ -1,3 +1,4 @@
+# nlp/generate_sql.py
 # Uses Gemini to turn text → SQL (with optional YAML templates for deterministic queries)
 
 from __future__ import annotations
@@ -10,10 +11,13 @@ from typing import Dict, Tuple, Optional
 
 import google.generativeai as genai
 from dotenv import load_dotenv
-import yaml
-from jinja2 import Template
 
-from nlp.templates import render_sql
+from pathlib import Path
+import yaml
+
+from .template_router import build_sql_from_templates
+from .sql_render import lint_sql, enforce_leaders_invariants
+
 
 
 # ---------- Constants & basic helpers ----------
@@ -40,6 +44,63 @@ def normalize_query(user_q: str) -> Tuple[str, int]:
     season = extract_season(user_q) or CURRENT_YEAR
     q = user_q.strip().rstrip("?.! ")
     return q, season
+
+
+def load_templates_yaml() -> dict:
+    p = Path(__file__).resolve().parents[0] / "templates" / "sql_templates.yml"
+    with p.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+def get_sql_and_params(
+    user_question: str,
+    schema_text: str,
+    prompt_template: str,      # << NEW: pass the prompt template in
+    templates_yaml: dict,
+    current_year: int,
+    season: int,               # << NEW: pass resolved season in
+    preset_sql: str = "",
+):
+    """
+    Returns: (sql_text, params_dict, source_str)
+      - source_str is 'preset' | f'template:{name}' | 'model'
+    Tries template first; if no match, falls back to your existing model path.
+    """
+    # 0) Preset passthrough
+    if preset_sql:
+        sql = lint_sql(preset_sql)
+        return sql, {}, "preset"
+
+    # 1) Template fast-path
+    try:
+        sql, params, tname = build_sql_from_templates(user_question, templates_yaml)
+    except Exception:
+        sql, params, tname = None, None, None
+
+    if sql:
+        sql = lint_sql(sql)
+        sql = enforce_leaders_invariants(sql)
+        return sql, (params or {}), f"template:{tname}"
+
+    # 2) Model fallback — use your existing prompt + Gemini path
+    base_prompt = build_prompt(
+        nl_query=user_question,                 # << correct param name
+        schema_str=schema_text,                 # << correct param name
+        prompt_template=prompt_template,        # << supply the template
+        season=season,                          # << supply season
+        current_year=current_year,
+    )
+    model_sql = get_sql_from_gemini(base_prompt)
+
+    # Safety pass
+    model_sql = lint_sql(model_sql)
+    try:
+        model_sql = enforce_leaders_invariants(model_sql)
+    except Exception:
+        # Re-raise so the caller can show a clear error
+        raise
+
+    return model_sql, {}, "model"
+
 
 
 # ---------- Templates (data‑driven router) ----------

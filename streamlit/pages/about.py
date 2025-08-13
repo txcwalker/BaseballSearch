@@ -17,9 +17,9 @@ st.markdown("""
 
 st.markdown("---")
 
-st.markdown("### 🔍 Purpose")
+st.markdown("### Purpose")
 st.write("""
-Baseball Search was created to make data exploration in baseball accessible and intuitive — 
+Databaseball was created to make data exploration in baseball accessible and intuitive — 
 even for users without SQL or coding experience. With natural language search and daily-updated stats, 
 you can instantly retrieve career trends, player comparisons, and stat breakdowns across decades of data.
 """)
@@ -30,13 +30,14 @@ st.write("""
 - **PostgreSQL (AWS RDS)** for backend storage
 - **pybaseball & Lahman DB** for stats
 - **GitHub Actions** for daily updates
-- **Google Gemini/OpenAI** for NLP query generation
+- **Google Gemini** for NLP query generation
 """)
 
 st.markdown("### About the Creator")
 st.write("""
-Created by **Cameron J. Walker**, a data scientist and baseball fan.  
-Check out more of my work:
+Created by **Cameron Walker**, a data scientist and baseball fan. 
+ 
+More about me:
 - [GitHub](https://github.com/txcwalker)
 - [LinkedIn](https://www.linkedin.com/in/cameronjwalker9/)
 - [Website](https://txcwalker.github.io/)
