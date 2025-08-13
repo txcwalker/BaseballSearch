@@ -1,5 +1,5 @@
 # app.py
-import os, sys
+import os, sys, time
 from pathlib import Path
 
 import streamlit as st
@@ -7,29 +7,22 @@ import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
 
-# 0) Page config MUST be the first Streamlit call
+# 0) Page config MUST be first Streamlit call
 st.set_page_config(page_title="Welcome to Databaseball", layout="wide")
 
-# Add project root to import path (so we can import nlp.*)
+# Add project root to import path (so we can import nlp.* later, lazily)
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# Custom imports
-import nlp.generate_sql as gsql
-from render_sidebar import render_sidebar
-from nlp.router_fastpath import init_fastpath, try_fastpath
-from nlp.template_router import route_template
-from nlp.sql_render import lint_sql, enforce_leaders_invariants
-
-# Setting difference for debugging UI
-DEBUG_UI = os.getenv("DBBALL_DEBUG_UI", "0") == "1"
-
-# --- env helpers ---
+# --- env helpers & flags ---
 def env(key: str, default=None):
     """Read from Streamlit secrets first (Cloud), then environment."""
     try:
-        return st.secrets.get(key, os.getenv(key, default))  # st.secrets may not exist locally
+        return st.secrets.get(key, os.getenv(key, default))
     except Exception:
         return os.getenv(key, default)
+
+DEBUG_UI = env("DBBALL_DEBUG_UI", "0") == "1"
+SAFE_START = env("DBBALL_SAFE_START", "0") == "1"   # if "1", skip any external calls until user acts
 
 # Load local .envs if present (harmless on Cloud)
 load_dotenv(Path(__file__).resolve().parents[1] / ".env.awsrds")
@@ -45,7 +38,7 @@ DB_PARAMS = {
 
 # --- cached resources & helpers ---
 @st.cache_resource(show_spinner=False)
-def get_stat_catalog():
+def get_stat_catalog(init_fastpath_fn):
     # Short connection + statement timeouts so the app never hangs
     conn = psycopg2.connect(
         **DB_PARAMS,
@@ -53,7 +46,7 @@ def get_stat_catalog():
         options="-c statement_timeout=5000"
     )
     try:
-        return init_fastpath(conn)
+        return init_fastpath_fn(conn)
     finally:
         try:
             conn.close()
@@ -91,7 +84,39 @@ def style_dataframe(df: pd.DataFrame):
                 ('background-color', '#003f5c'), ('color', 'white'), ('font-size', '15px')
             ]}]))
 
-# IMPORTANT: Do NOT call get_stat_catalog() at import time (prevents "baking" hangs)
+# IMPORTANT: Do NOT import nlp.* at module import time.
+# We lazy-import below so any import error is visible in the UI instead of hanging the process.
+_NLP_LOADED = False
+gsql = None
+init_fastpath = None
+try_fastpath = None
+route_template = None
+lint_sql = None
+enforce_leaders_invariants = None
+
+def load_nlp_modules():
+    """Lazy import all nlp modules. Raises on failure so we can show errors on screen."""
+    global _NLP_LOADED, gsql, init_fastpath, try_fastpath, route_template, lint_sql, enforce_leaders_invariants
+    if _NLP_LOADED:
+        return
+    import importlib
+
+    t0 = time.time()
+    gsql = importlib.import_module("nlp.generate_sql")
+    rfp  = importlib.import_module("nlp.router_fastpath")
+    tr   = importlib.import_module("nlp.template_router")
+    sr   = importlib.import_module("nlp.sql_render")
+
+    init_fastpath = getattr(rfp, "init_fastpath")
+    try_fastpath  = getattr(rfp, "try_fastpath")
+    route_template = getattr(tr, "route_template")
+    lint_sql = getattr(sr, "lint_sql")
+    enforce_leaders_invariants = getattr(sr, "enforce_leaders_invariants")
+    _NLP_LOADED = True
+    if DEBUG_UI:
+        st.caption(f"NLP modules loaded in {time.time()-t0:.2f}s")
+
+# No DB calls or LLM calls at import time
 STAT_CATALOG = None
 
 
@@ -99,8 +124,14 @@ STAT_CATALOG = None
 def render_home():
     global STAT_CATALOG
 
-    render_sidebar()
+    # Sidebar (local)
+    try:
+        from render_sidebar import render_sidebar
+        render_sidebar()
+    except Exception as e:
+        st.error(f"Sidebar failed to load: {e}")
 
+    # Header
     st.markdown("""
         <div style='text-align: center; padding: 3rem 0 2rem 0; background-color: #f0f8ff; border-radius: 12px;'>
             <h1 style='font-size: 3.5em; margin-bottom: 0.2em;'>
@@ -111,7 +142,10 @@ def render_home():
         </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("### 🛠️ What You Can Do")
+    # Heartbeat (helps confirm app actually rendered)
+    st.caption(f"Python: {os.sys.version.split()[0]} • SAFE_START={int(SAFE_START)} • DEBUG_UI={int(DEBUG_UI)}")
+
+    st.markdown("### What You Can Do")
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("#### Ask Questions")
@@ -122,23 +156,34 @@ def render_home():
 
     st.markdown("---")
     st.markdown("### Read Me")
-    st.page_link("pages/how_to_use.py", label="❓ How to Use")
+    st.page_link("pages/how_to_use.py", label="How to Use")
 
-    # Lazy-init the fast-path catalog with a short timeout (won't hang the app)
-    if STAT_CATALOG is None:
+    # Lazy import NLP stack (safe/fast; local files only)
+    try:
+        load_nlp_modules()
+    except Exception as e:
+        st.error(f"Failed to load NLP modules (nlp/*). {e}")
+        st.stop()
+
+    # Optional: lazy-init the fast-path catalog (DB) unless SAFE_START
+    if not SAFE_START and STAT_CATALOG is None:
         try:
             with st.status("Initializing fast-path (short DB check)…", state="running"):
-                STAT_CATALOG = get_stat_catalog()
-            st.toast("Fast-path enabled ✅", icon="✅")
-        except Exception as e:
-            st.info("Running without fast-path (DB unavailable).", icon="ℹ️")
+                STAT_CATALOG = get_stat_catalog(init_fastpath)
+            st.success("Fast-path enabled.")
+        except Exception:
+            st.info("Running without fast-path (DB unavailable).")
             STAT_CATALOG = None
 
-    # Load schema/prompt/templates after UI draws (local, no network)
-    schema_str = gsql.load_schema()
-    prompt_template = gsql.load_prompt_template()
-    templates_yaml = gsql.load_templates_yaml()
-    st.caption(f"Loaded templates: {len(templates_yaml.get('templates', {}))}")
+    # Load schema/prompt/templates AFTER UI draws (pure local)
+    try:
+        schema_str = gsql.load_schema()
+        prompt_template = gsql.load_prompt_template()
+        templates_yaml = gsql.load_templates_yaml()
+        st.caption(f"Loaded templates: {len(templates_yaml.get('templates', {}))}")
+    except Exception as e:
+        st.error(f"Failed to load schema/prompts/templates: {e}")
+        st.stop()
 
     # Controls
     nl_query = st.text_input("Ask a baseball question:")
@@ -147,13 +192,17 @@ def render_home():
     if DEBUG_UI:
         show_prompt = st.checkbox("Show LLM prompt (debug)", value=False)
 
+    # If SAFE_START is on, note that external calls are skipped until disabled
+    if SAFE_START:
+        st.warning("SAFE_START is enabled — DB/LLM calls are skipped until you turn this off.")
+
     submit = st.button("Generate SQL and Run")
 
     if submit and nl_query:
         norm_q, season = gsql.normalize_query(nl_query)
         sql_query, bound_params = None, {}
 
-        # 0) fast-path
+        # 0) fast-path (only if available)
         if STAT_CATALOG is not None:
             fast_sql = try_fastpath(
                 question=norm_q, season=season, conn=None,
@@ -189,14 +238,19 @@ def render_home():
                 sql_query, bound_params = None, {}
                 st.warning(f"Template route failed: {e}")
 
-        # 2) LLM
+        # 2) LLM (guarded)
         if sql_query is None:
+            if SAFE_START:
+                st.error("SAFE_START is enabled; LLM calls disabled. Turn off SAFE_START to allow LLM generation.")
+                st.stop()
+
             full_prompt = gsql.build_prompt(
                 norm_q, schema_str, prompt_template, season, current_year=gsql.CURRENT_YEAR
             )
             if DEBUG_UI and show_prompt:
                 with st.expander("Show prompt sent to LLM", expanded=False):
                     st.code(full_prompt, language="markdown")
+
             sql_query = gsql.get_sql_from_gemini(full_prompt)
             action = gsql.handle_model_response(sql_query, season)
             if action == "__REPROMPT__":
@@ -212,6 +266,7 @@ def render_home():
         if DEBUG_UI and st.toggle("Show generated SQL", value=False):
             st.code(sql_query, language="sql")
 
+        # Execute
         try:
             df_result = run_sql(sql_query, bound_params)
             df_result = title_case_columns(df_result)
@@ -221,11 +276,11 @@ def render_home():
             st.download_button("Download CSV", csv, file_name="results.csv", mime="text/csv")
         except Exception as e:
             if DEBUG_UI:
-                st.error(f"❌ Error running PostgreSQL query: {e}")
+                st.error(f"Error running PostgreSQL query: {e}")
                 if st.toggle("Show failed SQL?", value=False):
                     st.code(sql_query, language="sql")
             else:
-                st.error("❌ Something went wrong running your query.")
+                st.error("Something went wrong running your query.")
 
 
 # ------------------ NAVIGATION ------------------
@@ -248,7 +303,7 @@ for p in (howto_page, about_page, contact_page):
 
 # Only add Test Mode if env flag is set AND file exists
 test_page = _maybe_page("test_mode.py", "Test Mode")
-if os.getenv("DBBALL_ENABLE_TEST_UI") == "1" and test_page:
+if env("DBBALL_ENABLE_TEST_UI", "0") == "1" and test_page:
     pages.append(test_page)
 
 # Save Page objects for sidebar links
