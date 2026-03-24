@@ -2,12 +2,12 @@ name: Daily AWS RDS FanGraphs Update
 
 on:
   schedule:
-    - cron: '0 12 * * *'  # Daily at 12 PM UTC
+    - cron: '0 12 * * *'  # Daily at 12 PM UTC (7 AM CST)
   workflow_dispatch:
 
 jobs:
   update-awsrds:
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest  # ✅ GitHub-hosted runner (free) — replaces self-hosted EC2
 
     env:
       PGHOST: ${{ secrets.AWSHOST }}
@@ -20,12 +20,17 @@ jobs:
       - name: 📥 Checkout repo
         uses: actions/checkout@v3
 
-      - name: 🐍 Use system Python 3.11
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
         run: |
-          python3.11 --version
-          python3.11 -m pip install --upgrade pip
-          python3.11 -m pip install -r requirements_etl.txt
+          python -m pip install --upgrade pip
+          pip install -r requirements_etl.txt
 
       - name: 🔄 Run AWS RDS ETL update
         run: |
-          python3.11 etl/update_fangraphs_awsrds.py
+          python etl/update_fangraphs_awsrds.py
