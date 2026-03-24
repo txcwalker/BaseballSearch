@@ -17,20 +17,48 @@ jobs:
       PGPASSWORD: ${{ secrets.AWSPASSWORD }}
 
     steps:
+      - name: 📅 Check if MLB season is active
+        id: season_check
+        run: |
+          MONTH=$(date -u +%-m)
+          DAY=$(date -u +%-d)
+
+          # -------------------------------------------------------
+          # ⬇️  UPDATE THESE TWO DATES EACH YEAR IF NEEDED  ⬇️
+          # Format: MMDD  (month + day, zero-padded, no separator)
+          # Examples: Mar 20 = 0320, Oct 31 = 1031, Nov 5 = 1105
+          #
+          SEASON_START="0320"   # ⬅️ A few days before Opening Day
+          SEASON_END="1105"     # ⬅️ A few days after latest possible World Series Game 7
+          # -------------------------------------------------------
+
+          MMDD=$(printf "%02d%02d" $MONTH $DAY)
+          if [[ "$MMDD" < "$SEASON_START" || "$MMDD" > "$SEASON_END" ]]; then
+            echo "⚾ Off-season detected ($MONTH/$DAY) — skipping ETL."
+            echo "in_season=false" >> $GITHUB_OUTPUT
+          else
+            echo "⚾ Season active ($MONTH/$DAY) — proceeding with ETL."
+            echo "in_season=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: 📥 Checkout repo
+        if: steps.season_check.outputs.in_season == 'true'
         uses: actions/checkout@v3
 
       - name: 🐍 Set up Python 3.11
+        if: steps.season_check.outputs.in_season == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: 📦 Install dependencies
+        if: steps.season_check.outputs.in_season == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements_etl.txt
 
       - name: 🔄 Run AWS RDS ETL update
+        if: steps.season_check.outputs.in_season == 'true'
         run: |
           python etl/update_fangraphs_awsrds.py
