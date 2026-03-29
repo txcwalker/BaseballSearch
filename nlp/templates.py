@@ -34,7 +34,7 @@ _env = Environment(loader=BaseLoader(), trim_blocks=True, lstrip_blocks=True)
 def render_sql(template_name: str, **vars) -> str:
     # expose fragments if present
     ctx = {**vars, "fragments": (TPL.get("fragments") or {})}
-    tmpl = (TPL.get("templates") or {}).get(template_name)
+    tmpl = TPL.get(template_name)
     if not tmpl:
         raise KeyError(f"SQL template '{template_name}' not found in YAML.")
     sql = tmpl["sql"]

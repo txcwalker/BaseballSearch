@@ -30,7 +30,7 @@ Baseball Specific Rules
 
 
 Current-season source rule (critical)
-- If the requested season equals CURRENT_YEAR or the user says "this season"/"current season":
+- If REQUESTED_SEASON equals CURRENT_YEAR or the user says "this season"/"current season":
   • Do NOT read from any Lahman tables (batting, pitching, teams, etc.).
   • Use FanGraphs tables only (e.g., fangraphs_batting_lahman_like fbl, fangraphs_pitching_lahman_like fpl).
   • For batting leaders: the FROM clause must use fbl (and related FanGraphs tables if needed).
@@ -52,6 +52,14 @@ TOT / traded-player handling:
 - Apply this logic only when the question is about a player's season total.
 - Do not mix TOT and stint rows in the same SELECT
 
+Multi-season range queries:
+- When the user asks for combined or aggregated stats across a range of seasons (e.g. "from 2012 to 2014", "between 2010 and 2015", "2012-2014"), sum counting stats across all seasons in the range.
+- Use WHERE season BETWEEN Y1 AND Y2 to filter the range.
+- Always aggregate to one row per player: GROUP BY idfg (FanGraphs) or playerid (Lahman).
+- For counting stats, SUM the stat across seasons. For rate stats, compute a weighted average.
+- Still apply traded-player handling — use TOT rows where available per season before aggregating across seasons.
+- Do NOT use a single-season template for these queries. Generate a multi-season aggregation query.
+
 Leaderboards:
 - Include ties for the last rank requested.
 - If no N is given, return top 10 with ties.
@@ -69,8 +77,8 @@ SQL style (relevant uniqueness/dup-guards):
 - Ensure uniqueness with GROUP BY idfg, season (FanGraphs) or GROUP BY playerid, yearid (Lahman). If pre-aggregation isn’t possible, use DISTINCT ON (idfg, season) or DISTINCT ON (playerid, yearid) with deterministic ORDER BY.
 - When joins can multiply rows, pre-aggregate the child to one row per id (+ season) or use 1:1 keys.
 - To pick a single aggregate row, use either:
-- DISTINCT ON (idfg, season) … ORDER BY idfg, season, (team='TOT') DESC, (team='---') DESC, or
-- A CTE with ROW_NUMBER() OVER (PARTITION BY idfg, season ORDER BY (team='TOT') DESC, (team='---') DESC) = 1
+- DISTINCT ON (idfg, season) … ORDER BY idfg, season, (team='TOT') DESC, or
+- A CTE with ROW_NUMBER() OVER (PARTITION BY idfg, season ORDER BY (team='TOT') DESC) = 1
 
 Table aliases (use consistently)
 # Lahman

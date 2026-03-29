@@ -1,11 +1,13 @@
 # app.py
-import os, sys
+import os, sys, re
 from pathlib import Path
+
 
 import streamlit as st
 import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
 
 # 0) Page config MUST be first Streamlit call
 st.set_page_config(page_title="Welcome to Databaseball", layout="wide")
@@ -53,12 +55,21 @@ def get_stat_catalog(_init_fastpath_fn):
 
 @st.cache_data(show_spinner=False, ttl=300)
 def run_sql(sql: str, params: dict | None = None):
-    with psycopg2.connect(
-        **DB_PARAMS,
-        connect_timeout=5,
-        options="-c statement_timeout=15000"
-    ) as conn:
-        return pd.read_sql_query(sql, conn, params=params or {})
+    url = (
+        f"postgresql+psycopg2://{DB_PARAMS['user']}:{DB_PARAMS['password']}"
+        f"@{DB_PARAMS['host']}:{DB_PARAMS['port']}/{DB_PARAMS['dbname']}"
+    )
+    engine = create_engine(url, connect_args={
+        "connect_timeout": 5,
+        "options": "-c statement_timeout=15000"
+    })
+
+    # Convert %(key)s style to :key style for SQLAlchemy
+    if params:
+        sql = re.sub(r"%\((\w+)\)s", r":\1", sql)
+
+    with engine.connect() as conn:
+        return pd.read_sql_query(text(sql), conn, params=params or {})
 
 def looks_like_sql(s: str) -> bool:
     lo = (s or "").lstrip().lower()
@@ -162,7 +173,7 @@ def render_home():
         prompt_template = gsql.load_prompt_template()
         templates_yaml = gsql.load_templates_yaml()
         if DEBUG_UI:
-            st.caption(f"Loaded templates: {len(templates_yaml.get('templates', {}))}")
+            st.caption(f"Loaded templates: {len(templates_yaml)}")
     except Exception as e:
         st.error("Failed to load configuration.")
         if DEBUG_UI:
