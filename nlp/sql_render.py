@@ -25,7 +25,7 @@ def enforce_leaders_invariants(sql: str) -> str:
         has_trade_safe = (
             "COALESCE(" in sql
             and "FILTER (WHERE team = 'TOT')" in sql
-            and "FILTER (WHERE team NOT IN ('TOT','---'))" in sql
+            and "FILTER (WHERE team NOT IN ('TOT'))" in sql
         )
         if not (has_distinct_on and has_trade_safe):
             raise ValueError("Missing traded-player safeguards (DISTINCT ON + COALESCE MAX 'TOT' + SUM non-'TOT').")

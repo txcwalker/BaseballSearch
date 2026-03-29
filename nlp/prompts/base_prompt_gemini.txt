@@ -46,11 +46,11 @@ Answerability rules:
 - Do not fabricate missing columns or stats.
 
 TOT / traded-player handling:
-- Produce one row per (idfg or playerid, season); aggregate to that grain first.
-- If aggregate rows exist, keep exactly one with precedence: TOT > ---; ignore team‑stint rows.
-- If no aggregate row exists, sum only non‑TOT, non --- stints.
-- Apply this logic only when the question is about a player’s season total.
-- Do not mix TOT and stint totals in the same SELECT.
+- Produce one row per (idfg, season); aggregate to that grain first.
+- If a TOT row exists for a player, use it as the season total and ignore all stint rows.
+- If no TOT row exists, the player was not traded — use their single team row directly.
+- Apply this logic only when the question is about a player's season total.
+- Do not mix TOT and stint rows in the same SELECT
 
 Leaderboards:
 - Include ties for the last rank requested.

@@ -137,7 +137,7 @@ def finalize_batting(df: pd.DataFrame) -> pd.DataFrame:
 
     # Normalize team aggregate code
     if "team" in out.columns:
-        out["team"] = out["team"].replace({"- - -": "TOT"})
+        out = out[out["team"].str.strip() != "- - -"]
 
     # Coerce counting stats that we use downstream
     for c in ("h", "hr", "2b", "3b"):
