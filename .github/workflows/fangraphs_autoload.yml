@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest  # ✅ GitHub-hosted runner (free) — replaces self-hosted EC2
 
     env:
-      PGHOST: ${{ secrets.AWSHOST }}
-      PGPORT: ${{ secrets.AWSPORT }}
-      PGDATABASE: ${{ secrets.AWSDATABASE }}
-      PGUSER: ${{ secrets.AWSUSER }}
-      PGPASSWORD: ${{ secrets.AWSPASSWORD }}
+      AWSHOST: ${{ secrets.AWSHOST }}
+      AWSPORT: ${{ secrets.AWSPORT }}
+      AWSDATABASE: ${{ secrets.AWSDATABASE }}
+      AWSUSER: ${{ secrets.AWSUSER }}
+      AWSPASSWORD: ${{ secrets.AWSPASSWORD }}
 
     steps:
       - name: 📅 Check if MLB season is active
