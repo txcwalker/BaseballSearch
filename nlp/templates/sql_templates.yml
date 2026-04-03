@@ -189,3 +189,107 @@ leaders_batting_qualified:
     FROM qualified
     ORDER BY "{{ stat_label }}" DESC, name ASC
     FETCH FIRST %(top_n)s ROWS WITH TIES;
+
+
+player_pitching_career_by_season:
+  description: "A single pitcher's ERA and FIP by season (FanGraphs, 2002+)"
+  patterns:
+    - "(?i)(?P<name>[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)+)'?s?\\s+(?:era|fip|stats?|numbers?)\\s+(?:by|each|per)\\s+season"
+    - "(?i)show\\s+(?P<name>[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)+)'?s?\\s+(?:era|fip|career|pitching)"
+    - "(?i)(?P<name>[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)+)\\s+(?:era|fip)\\s+(?:by|each)\\s+season"
+  params: ["player_name"]
+  defaults: {}
+  sql: |
+    SELECT
+      fpr.season,
+      fpr.name,
+      fpr.team,
+      fpr.era,
+      fpa.fip,
+      fpa.xfip,
+      fpl.w,
+      fpl.l,
+      fpl.ip,
+      fpl.so
+    FROM fangraphs_pitching_standard_ratios fpr
+    JOIN fangraphs_pitching_advanced fpa
+      ON fpa.idfg = fpr.idfg AND fpa.season = fpr.season
+    JOIN fangraphs_pitching_lahman_like fpl
+      ON fpl.idfg = fpr.idfg AND fpl.season = fpr.season
+    WHERE LOWER(fpr.name) = LOWER(%(player_name)s)
+      AND fpr.team NOT IN ('TOT', '---')
+       OR (
+         fpr.idfg IN (SELECT idfg FROM fangraphs_pitching_lahman_like WHERE LOWER(name) = LOWER(%(player_name)s))
+         AND fpr.team = 'TOT'
+       )
+    ORDER BY fpr.season ASC;
+
+
+team_era_season:
+  description: "Team ERA rankings for a given season, optionally filtered by league/division"
+  patterns:
+    - "(?i)(?:best|lowest|top|worst|highest)\\s+(?:bullpen\\s+)?era\\s+(?:in|for|during)\\s+(?P<season>\\d{4})"
+    - "(?i)team\\s+era\\s+(?:in|for)\\s+(?P<season>\\d{4})"
+    - "(?i)which\\s+teams?\\s+had\\s+the\\s+(?:best|lowest|worst|highest)\\s+(?:bullpen\\s+)?era\\s+(?:in|for)\\s+(?P<season>\\d{4})"
+    - "(?i)(?:bullpen|pitching)\\s+era\\s+(?:rankings?|leaders?|in|for)\\s+(?P<season>\\d{4})"
+  params: ["season"]
+  defaults: { top_n: 10 }
+  param_types: { season: int, top_n: int }
+  sql: |
+    SELECT
+      tms.name AS team,
+      tms.lgid AS league,
+      tms.divid AS division,
+      tms.era,
+      tms.w,
+      tms.l
+    FROM teams tms
+    WHERE tms.yearid = %(season)s
+    ORDER BY tms.era ASC
+    LIMIT %(top_n)s;
+
+
+team_batting_avg_division:
+  description: "Compare team batting averages within a division and season"
+  patterns:
+    - "(?i)(?:compare|show|list)\\s+(?:the\\s+)?batting\\s+averages?\\s+of\\s+(?:all\\s+)?(?:the\\s+)?(?P<league>AL|NL|American League|National League)?\\s*(?P<division>East|West|Central)\\s+teams?\\s+(?:in|for|during)\\s+(?P<season>\\d{4})"
+    - "(?i)(?P<league>AL|NL)\\s+(?P<division>East|West|Central)\\s+(?:team\\s+)?batting\\s+averages?\\s+(?:in|for)\\s+(?P<season>\\d{4})"
+    - "(?i)batting\\s+averages?\\s+(?:for|of)\\s+(?:all\\s+)?(?P<league>AL|NL)\\s+(?P<division>East|West|Central)\\s+teams?\\s+(?:in|for)?\\s*(?P<season>\\d{4})"
+  params: ["season", "league", "division"]
+  param_types: { season: int }
+  sql: |
+    SELECT
+      tms.name AS team,
+      ROUND(tms.h::numeric / NULLIF(tms.ab, 0), 3) AS avg,
+      tms.h AS hits,
+      tms.ab AS at_bats,
+      tms.w AS wins,
+      tms.l AS losses
+    FROM teams tms
+    WHERE tms.yearid = %(season)s
+      AND tms.lgid = %(league)s
+      AND tms.divid = %(division)s
+    ORDER BY avg DESC;
+
+
+team_season_stats:
+  description: "General team stats for a given season"
+  patterns:
+    - "(?i)(?P<team_name>[A-Z][a-zA-Z ]+(?:Yankees|Red Sox|Dodgers|Giants|Cubs|Cardinals|Braves|Mets|Phillies|Nationals|Marlins|Reds|Pirates|Brewers|Padres|Rockies|Diamondbacks|Angels|Astros|Athletics|Rangers|Mariners|Blue Jays|Orioles|Rays|Tigers|Indians|Guardians|White Sox|Royals|Twins|Padres))[^\\d]*(?P<season>\\d{4})"
+    - "(?i)how\\s+did\\s+the\\s+(?P<team_name>[\\w\\s]+?)\\s+do\\s+in\\s+(?P<season>\\d{4})"
+  params: ["season", "team_name"]
+  param_types: { season: int }
+  sql: |
+    SELECT
+      tms.name AS team,
+      tms.w AS wins,
+      tms.l AS losses,
+      tms.era,
+      ROUND(tms.h::numeric / NULLIF(tms.ab, 0), 3) AS team_avg,
+      tms.hr AS home_runs,
+      tms.r AS runs_scored,
+      tms.ra AS runs_allowed
+    FROM teams tms
+    WHERE tms.yearid = %(season)s
+      AND LOWER(tms.name) LIKE LOWER(%(team_name)s)
+    ORDER BY tms.w DESC;
