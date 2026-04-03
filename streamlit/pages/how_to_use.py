@@ -58,7 +58,7 @@ with st.expander("💡 Tips for Best Results", expanded=True):
         - Use full player names (*"Aaron Judge"*, not *"Judge"*)
         - Specify a year when possible
         - Write in complete sentences with correct grammar
-        - *"Who leads"* → returns 1 result; *"What players lead"* → returns a list
+        - *"Who leads"* → returns 1 result; *"What players lead(s)"* → returns a list
         - When strikeouts could mean hitter **or** pitcher, specify which!
         """)
     with col2:
@@ -83,8 +83,7 @@ with st.expander("📚 Data Sources", expanded=False):
     | **Lahman Database** | Historical MLB stats going back to 1871 |
     | **Statcast** *(coming soon)* | Pitch-level and batted-ball data via `pybaseball` |
 
-    The database is updated **daily at 9 AM EST** via automated GitHub Actions + AWS RDS pipelines.
-    Stats are not live until the following morning.
+    The database is updated **daily at 9 AM EST**.
     """)
 
 # --- Example Queries ---

@@ -22,15 +22,16 @@ st.markdown("---")
 # Purpose
 st.markdown("### 🎯 Purpose")
 st.markdown("""
-Databaseball was built to make baseball data exploration **accessible and intuitive** — 
-even for users without SQL or coding experience.
+Databaseball was built to make the exploration of baseball statistics accessible and intuitive. You shouldn't need
+to know SQL or any other coding language to get your questions answered. No more stats hidden behind niche sites or
+aggregating multiple sources, eveything is here. 
 
-Instead of digging through spreadsheets or learning query syntax, you just ask a question 
-in plain English. The app translates it into a database query, runs it against a 
-continuously-updated PostgreSQL database, and returns real results instantly.
+Any Question you have can be written in plain English and Databaseball will translate that into a SQL query and return
+your desired answer within a few seconds. The database is updated daily in the mornings so the stats from June 1st are
+live in the database in the morning on June 2nd.
 
 Whether you're a casual fan or a serious sabermetrician, Databaseball lets you explore 
-career trends, player comparisons, stat leaderboards, and advanced analytics across **decades of MLB data**.
+career trends, player comparisons, stat leaderboards, and advanced analytics across decades of MLB data.
 """)
 
 st.markdown("---")
@@ -67,19 +68,18 @@ with col2:
 st.markdown("---")
 
 # Creator
-st.markdown("### 👤 About the Creator")
+st.markdown("### 😄 About Me")
 
 col1, col2 = st.columns([2, 1])
 with col1:
     st.markdown("""
-    Hi, I'm **Cameron Walker** — a data scientist and lifelong baseball fan based in Texas.
+    Hi, My name is Cam. I am a lifelong baseball fan and Data Scientist
 
-    I built Databaseball because I wanted a tool that made it easy to answer the kinds of 
-    questions baseball fans actually ask: *"Who had the best ERA since 2010?"*, 
-    *"How does Ohtani's WAR compare to Trout's?"*, *"Which teams overperformed their Pythagorean record?"*
+    I built Databaseball because as a baseball fan I wanted a tool that made it easy to answer as many baseball statistic
+    related questions as I could imagine and even some I cannot. As a data scientist I knew I had the skills to make such a tool.
 
     This project combines my interest in natural language interfaces, data engineering, 
-    and the sport I grew up watching.
+    and the sport I grew up watching and playing.
     """)
 with col2:
     st.markdown("""
@@ -98,6 +98,6 @@ st.markdown("---")
 
 st.markdown("""
     <div style='text-align: center; color: #888; font-size: 0.85em; padding: 0.5rem 0;'>
-        Databaseball · Beta v0.1 · Built with ❤️ and too many baseball stats
+        Databaseball · Beta v0.1 ·
     </div>
 """, unsafe_allow_html=True)
