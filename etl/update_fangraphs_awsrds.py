@@ -6,6 +6,8 @@ from __future__ import annotations
 # Imports
 import os
 import re
+import time
+import requests
 from datetime import date
 from pathlib import Path
 from typing import Iterable, List, Tuple, Dict
@@ -15,6 +17,31 @@ import psycopg2
 from psycopg2.extras import execute_values
 from pybaseball import batting_stats, pitching_stats
 from dotenv import load_dotenv
+
+# ---------------------------------------------------------------
+# FanGraphs 403 fix: patch requests with a real browser User-Agent
+# GitHub Actions runners get blocked without this.
+# ---------------------------------------------------------------
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.fangraphs.com/",
+}
+
+_original_get = requests.Session.get
+
+def _patched_get(self, url, **kwargs):
+    kwargs.setdefault("headers", {})
+    kwargs["headers"] = {**_HEADERS, **kwargs["headers"]}
+    return _original_get(self, url, **kwargs)
+
+requests.Session.get = _patched_get
+# ---------------------------------------------------------------
 
 # ---------------- Env & DB params ----------------
 load_dotenv(Path(__file__).resolve().parents[1] / ".env.awsrds")
@@ -68,20 +95,27 @@ def resolve_fb_conflict(df: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns=rename_map)
 
 # ---------------- Load data ----------------
+print(f"📡 Fetching FanGraphs batting stats for {YEAR}...")
 try:
     df_bat = batting_stats(YEAR)
     df_bat["Season"] = YEAR
     df_bat.rename(columns=batting_rename_map, inplace=True)
     df_bat.replace({'\$': ''}, regex=True, inplace=True)
+    print(f"✅ Batting fetch succeeded: {len(df_bat)} rows")
 except Exception as e:
     print(f"⚠️ Skipped batting {YEAR}: {e}")
     df_bat = pd.DataFrame()
 
+# Small delay between requests to be polite
+time.sleep(3)
+
+print(f"📡 Fetching FanGraphs pitching stats for {YEAR}...")
 try:
     df_pitch = pitching_stats(YEAR)
     df_pitch["Season"] = YEAR
     df_pitch.rename(columns=pitching_rename_map, inplace=True)
     df_pitch.replace({'\$': ''}, regex=True, inplace=True)
+    print(f"✅ Pitching fetch succeeded: {len(df_pitch)} rows")
 except Exception as e:
     print(f"⚠️ Skipped pitching {YEAR}: {e}")
     df_pitch = pd.DataFrame()
@@ -122,7 +156,7 @@ def normalize_negatives(df: pd.DataFrame) -> pd.DataFrame:
         return df
     def conv(x):
         if isinstance(x, str) and re.match(r'^\(\d+(\.\d+)?\)$', x):
-            return float(re.sub(r'^\((.*)\)$', r'-\1', x))
+            return float(re.sub(r'^\((.+)\)$', r'-\1', x))
         return x
     return df.apply(lambda col: col.map(conv))
 
@@ -135,20 +169,16 @@ def finalize_batting(df: pd.DataFrame) -> pd.DataFrame:
         return df
     out = df.copy()
 
-    # Normalize team aggregate code
     if "team" in out.columns:
-        out = out[out["team"].str.strip() != "- - -"]
+        out["team"] = out["team"].replace({"- - -": "TOT"})
 
-    # Coerce counting stats that we use downstream
     for c in ("h", "hr", "2b", "3b"):
         if c in out.columns:
             out[c] = pd.to_numeric(out[c], errors="coerce")
 
-    # ✅ Always (re)compute from source columns if present
     if "2b" in out.columns:
         out["doubles"] = pd.to_numeric(out["2b"], errors="coerce")
     else:
-        # if no source, keep existing or set NA so singles calc can reflect missingness
         if "doubles" not in out.columns:
             out["doubles"] = pd.NA
 
@@ -158,12 +188,10 @@ def finalize_batting(df: pd.DataFrame) -> pd.DataFrame:
         if "triples" not in out.columns:
             out["triples"] = pd.NA
 
-    # Ensure components exist for singles calc
     for c in ("h", "hr", "doubles", "triples"):
         if c not in out.columns:
             out[c] = pd.NA
 
-    # Compute singles from components
     out["singles"] = (
         pd.to_numeric(out["h"], errors="coerce")
         - pd.to_numeric(out["doubles"], errors="coerce")
@@ -171,88 +199,37 @@ def finalize_batting(df: pd.DataFrame) -> pd.DataFrame:
         - pd.to_numeric(out["hr"], errors="coerce")
     )
 
-    # Clamp impossible negatives (bad source rows) to 0
     out["singles"] = out["singles"].where(out["singles"].ge(0) | out["singles"].isna(), 0)
 
     return out
 
-
-# Apply it
 df_bat = finalize_batting(df_bat)
 
-
-df_pitch = normalize_negatives(convert_numeric(clean_columns(df_pitch)))
-
-# Fill NA
-if not df_bat.empty:
-    df_bat = df_bat.fillna(0.0)
-if not df_pitch.empty:
-    df_pitch = df_pitch.fillna(0.0)
-
-# ---------------- Schema mappings ----------------
-batting_splits: Dict[str, List[str]] = {
-    "fangraphs_batting_lahman_like": [
-        "idfg","season","name","team","g","ab","pa","h","singles","doubles","triples","hr",
-        "r","rbi","bb","ibb","so","hbp","sf","sh","sb","cs"
-    ],
-    "fangraphs_batting_standard_ratios": [
-        "idfg","season","name","team","avg","obp","slg","ops","iso","babip","bb_pc","k_pc","bb_k","gdp"
-    ],
-    "fangraphs_batting_advanced": [
-        "idfg","season","name","team","woba","wraa","wrc","wrc_plus","war","rar","bat","fld","rep","pos","off","def","dol"
-    ],
-    "fangraphs_plate_discipline": [
-        "idfg","season","name","team","o_swing_pc","z_swing_pc","swing_pc","o_contact_pc","z_contact_pc","contact_pc",
-        "zone_pc","f_strike_pc","swstr_pc","cstr_pc","csw_pc","wpa","clutch","re24","rew","pli","phli","ph"
-    ],
-    "fangraphs_batted_ball": [
-        "idfg","season","name","team","gb","fb","ld","iffb","gb_fb","ld_pc","gb_pc","fb_pc","iffb_pc","hr_fb",
-        "ifh","ifh_pc","bu","buh","buh_pc","pull_pc","cent_pc","oppo_pc","soft_pc","med_pc","hard_pc","hardhit",
-        "hardhit_pc","ev","la","barrels","barrel_pc","maxev","tto_pc"
-    ],
-    "fangraphs_baserunning_fielding": [
-        "idfg","season","name","team","bsr","spd","wsb","ubr","wgdp"
-    ],
-    "fangraphs_batter_pitch_type_summary": [
-        "idfg","season","name","team","fb_pc","fbv","sl_pc","slv","ch_pc","chv","cb_pc","cbv","sf_pc","sfv","ct_pc","ctv",
-        "kn_pc","knv","xx_pc","po_pc","wfb","wsl","wch","wcb","wsf","wct","wkn","wfb_c","wsl_c","wch_c","wcb_c",
-        "wsf_c","wct_c","wkn_c"
-    ],
+# ---------------- Table splits ----------------
+batting_splits = {
+    "fangraphs_batting_lahman_like": ["idfg", "season", "name", "team", "g", "ab", "pa", "h", "singles", "doubles", "triples", "hr", "r", "rbi", "bb", "ibb", "so", "hbp", "sf", "sh", "gdp", "sb", "cs"],
+    "fangraphs_batting_standard_ratios": ["idfg", "season", "name", "team", "avg", "obp", "slg", "ops", "iso", "babip", "bb_pc", "k_pc", "bb_k", "gdp"],
+    "fangraphs_batting_advanced": ["idfg", "season", "name", "team", "woba", "wraa", "wrc", "wrc_plus", "war", "rar", "bat", "fld", "rep", "pos", "off", "def", "dol"],
+    "fangraphs_plate_discipline": ["idfg", "season", "name", "team", "o_swing_pc", "z_swing_pc", "swing_pc", "o_contact_pc", "z_contact_pc", "contact_pc", "zone_pc", "f_strike_pc", "swstr_pc", "cstr_pc", "csw_pc", "wpa", "wpa_li", "clutch", "re24", "rew", "pli", "phli", "ph"],
+    "fangraphs_batted_ball": ["idfg", "season", "name", "team", "gb", "fyb", "ld", "iffb", "gb_fb", "ld_pc", "gb_pc", "fyb_pc", "iffb_pc", "hr_fb", "ifh", "ifh_pc", "bu", "buh", "buh_pc", "pull_pc", "cent_pc", "oppo_pc", "soft_pc", "med_pc", "hard_pc", "hardhit", "hardhit_pc", "ev", "la", "barrels", "barrel_pc", "maxev", "tto_pc"],
+    "fangraphs_baserunning_fielding": ["idfg", "season", "name", "team", "bsr", "spd", "wsb", "ubr", "wgdp"],
+    "fangraphs_batter_pitch_type_summary": ["idfg", "season", "name", "team", "fb_pc", "fbv", "sl_pc", "slv", "ch_pc", "chv", "cb_pc", "cbv", "sf_pc", "sfv", "ct_pc", "ctv", "kn_pc", "knv", "xx_pc"],
 }
 
-pitching_splits: Dict[str, List[str]] = {
-    "fangraphs_pitching_lahman_like": [
-        "idfg","season","name","team","w","l","g","gs","cg","sho","sv","ip","h","r","er","hr","bb","so","hbp","wp","bk","tbf"
-    ],
-    "fangraphs_pitching_standard_ratios": [
-        "idfg","season","name","team","era","k_9","bb_9","k_bb","h_9","hr_9","avg","whip","babip","lob_pc"
-    ],
-    "fangraphs_pitching_advanced": [
-        "idfg","season","name","team","war","fip","xfip","siera","era_minus","fip_minus","xfip_minus","rar","dollars","ra9_war"
-    ],
-    "fangraphs_pitching_plate_discipline": [
-        "idfg","season","name","team","o_swing_pc","z_swing_pc","swing_pc","o_contact_pc","z_contact_pc",
-        "contact_pc","zone_pc","f_strike_pc","swstr_pc","cstr_pc","csw_pc"
-    ],
-    "fangraphs_pitching_batted_ball": [
-        "idfg","season","name","team","gb_fb","ld_pc","gb_pc","fyb_pc","iffb_pc","hr_fb","pull_pc","cent_pc","oppo_pc",
-        "soft_pc","med_pc","hard_pc","ev","la","barrels","barrel_pc","maxev","hardhit","hardhit_pc","tto_pc"
-    ],
-    "fangraphs_pitching_pitch_type_summary": [
-        "idfg","season","name","team","fb_pc","fbv","sl_pc","slv","ct_pc","ctv","cb_pc","cbv","ch_pc","chv","sf_pc","sfv",
-        "kn_pc","knv","xx_pc","po_pc","wfb","wsl","wct","wcb","wch","wsf","wkn","wfb_c","wsl_c","wct_c","wcb_c","wch_c",
-        "wsf_c","wkn_c"
-    ],
+pitching_splits = {
+    "fangraphs_pitching_lahman_like": ["idfg", "season", "name", "team", "w", "l", "g", "gs", "cg", "sho", "sv", "ip", "h", "r", "er", "hr", "bb", "so", "hbp", "wp", "bk", "tbf"],
+    "fangraphs_pitching_standard_ratios": ["idfg", "season", "name", "team", "era", "k_9", "bb_9", "k_bb", "h_9", "hr_9", "avg", "whip", "babip", "lob_pc"],
+    "fangraphs_pitching_advanced": ["idfg", "season", "name", "team", "war", "fip", "xfip", "siera", "era_minus", "fip_minus", "xfip_minus", "rar", "dollars", "ra9_war"],
+    "fangraphs_pitching_plate_discipline": ["idfg", "season", "name", "team", "o_swing_pc", "z_swing_pc", "swing_pc", "o_contact_pc", "z_contact_pc", "contact_pc", "zone_pc", "f_strike_pc", "swstr_pc", "cstr_pc", "csw_pc"],
+    "fangraphs_pitching_batted_ball": ["idfg", "season", "name", "team", "gb_fb", "ld_pc", "gb_pc", "fyb_pc", "iffb_pc", "hr_fb", "hardhit_pc", "barrel_pc", "ev", "la"],
+    "fangraphs_pitching_pitch_type_summary": ["idfg", "season", "name", "team"],
 }
 
-# ---------------- Split helper ----------------
-def split_dataframe(df: pd.DataFrame, mapping: Dict[str, List[str]]) -> Dict[str, pd.DataFrame]:
-    out: Dict[str, pd.DataFrame] = {}
-    if df.empty:
-        return out
+def split_dataframe(df: pd.DataFrame, mapping: dict) -> dict:
+    out = {}
     for table, cols in mapping.items():
         valid = [c for c in cols if c in df.columns]
-        if len(valid) >= 4:  # basic sanity
+        if len(valid) >= 4:
             out[table] = df[valid].copy()
     return out
 
@@ -260,7 +237,7 @@ batting_dfs = split_dataframe(df_bat, batting_splits)
 pitching_dfs = split_dataframe(df_pitch, pitching_splits)
 
 # ---------------- Key selection & index checks ----------------
-SEASON_ONLY: set[str] = set()  # Add tables here if they have no per-team rows
+SEASON_ONLY: set[str] = set()
 
 def conflict_cols_for(table_name: str, df_cols: List[str]) -> List[str]:
     if table_name in SEASON_ONLY:
@@ -284,143 +261,113 @@ def existing_unique_indexes(conn, table_name: str) -> List[List[str]]:
     return [list(cols) for (cols,) in rows] if rows else []
 
 def has_matching_unique_index(conn, table_name: str, conflict_cols: List[str]) -> bool:
-    # Require exact column list match (order matters for arbiter)
     return conflict_cols in existing_unique_indexes(conn, table_name)
 
 def ensure_unique_index(conn, table_name: str, conflict_cols: list[str]) -> None:
-    """
-    Ensure a UNIQUE index exists for the given conflict columns.
-    Use a separate autocommit connection for CREATE INDEX CONCURRENTLY
-    to avoid 'set_session cannot be used inside a transaction'.
-    """
     if has_matching_unique_index(conn, table_name, conflict_cols):
         return
-
-    idx_name = f"ux_{table_name}_{'_'.join(conflict_cols)}"
-    cols_sql = ", ".join(conflict_cols)
-    stmt = f'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS {idx_name} ON "{table_name}" ({cols_sql});'
-
-    # Use a brand-new connection in autocommit mode
-    admin_conn = None
+    index_name = f"uix_{'_'.join(conflict_cols)}_{table_name}"[:63]
+    dsn = conn.dsn
+    import psycopg2 as _pg2
+    ac_conn = _pg2.connect(dsn)
     try:
-        admin_conn = psycopg2.connect(**DB_PARAMS)
-        admin_conn.autocommit = True
-        with admin_conn.cursor() as cur:
-            print(f"🧱 Creating UNIQUE index on `{table_name}` for ({cols_sql}) ...")
-            cur.execute(stmt)
-        print(f"✅ Ensured UNIQUE index `{idx_name}` on `{table_name}`")
+        ac_conn.autocommit = True
+        with ac_conn.cursor() as cur:
+            cur.execute(
+                f'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "{index_name}" '
+                f'ON "{table_name}" ({", ".join(conflict_cols)})'
+            )
+        print(f"  ✅ Created unique index {index_name}")
     finally:
-        if admin_conn:
-            admin_conn.close()
+        ac_conn.close()
 
 def count_duplicates(conn, table_name: str, key_cols: List[str]) -> int:
+    key_expr = ", ".join(key_cols)
     with conn.cursor() as cur:
         cur.execute(f"""
-            SELECT COALESCE(SUM(cnt) ,0) FROM (
-              SELECT COUNT(*) - 1 AS cnt
-              FROM "{table_name}"
-              GROUP BY {", ".join(key_cols)}
-              HAVING COUNT(*) > 1
-            ) s;
+            SELECT COALESCE(SUM(cnt - 1), 0)
+            FROM (
+                SELECT COUNT(*) AS cnt
+                FROM "{table_name}"
+                GROUP BY {key_expr}
+                HAVING COUNT(*) > 1
+            ) sub
         """)
-        (dupes,) = cur.fetchone()
-    return int(dupes or 0)
+        return cur.fetchone()[0]
 
 def dedupe_table(conn, table_name: str, key_cols: List[str]) -> int:
-    """
-    Delete perfect duplicates keeping the first physical row (arbitrary) per key.
-    Returns number of rows deleted.
-    """
+    key_expr = ", ".join(key_cols)
     with conn.cursor() as cur:
         cur.execute(f"""
-            WITH ranked AS (
-              SELECT ctid, ROW_NUMBER() OVER (
-                  PARTITION BY {", ".join(key_cols)} ORDER BY ctid
-              ) AS rn
-              FROM "{table_name}"
+            DELETE FROM "{table_name}"
+            WHERE ctid NOT IN (
+                SELECT MIN(ctid)
+                FROM "{table_name}"
+                GROUP BY {key_expr}
             )
-            DELETE FROM "{table_name}" t
-            USING ranked r
-            WHERE t.ctid = r.ctid
-              AND r.rn > 1;
         """)
-        deleted = cur.rowcount or 0
-    if deleted:
-        conn.commit()
+        deleted = cur.rowcount
+    conn.commit()
     return deleted
 
-# ---------------- Change detection ----------------
-def get_changed_rows(df: pd.DataFrame, table_name: str, conn) -> pd.DataFrame:
-    if df.empty:
+def chunk(it: Iterable, size: int):
+    buf = []
+    for item in it:
+        buf.append(item)
+        if len(buf) == size:
+            yield buf
+            buf = []
+    if buf:
+        yield buf
+
+def diff_dataframe(df: pd.DataFrame, table_name: str, conn, key_cols: List[str], batch_size: int = 500) -> pd.DataFrame:
+    all_cols = list(df.columns)
+    key_expr = ", ".join([f'"{c}"' for c in key_cols])
+    key_values = [tuple(row) for row in df[key_cols].itertuples(index=False, name=None)]
+
+    existing_rows = []
+    for batch in chunk(key_values, batch_size):
+        placeholders = ", ".join([f"({', '.join(['%s'] * len(key_cols))})" for _ in batch])
+        flat = [v for row in batch for v in row]
+        with conn.cursor() as cur:
+            cur.execute(f'SELECT {", ".join([f"{chr(34)}{c}{chr(34)}" for c in all_cols])} FROM "{table_name}" WHERE ({key_expr}) IN ({placeholders})', flat)
+            existing_rows.extend(cur.fetchall())
+
+    if not existing_rows:
         return df
-    key_cols = conflict_cols_for(table_name, df.columns.tolist())
-    non_key_cols = [c for c in df.columns if c not in key_cols]
 
-    with conn.cursor() as cur:
-        keys = df[key_cols].drop_duplicates()
-        keys_tuple = [tuple((x.item() if hasattr(x, "item") else x) for x in row) for row in keys.to_numpy()]
-        if not keys_tuple:
-            return pd.DataFrame()
+    existing_df = pd.DataFrame(existing_rows, columns=all_cols)
+    merged = df.merge(existing_df, on=key_cols, suffixes=("_new", "_old"), how="left")
+    mask = pd.Series([False] * len(df), index=df.index)
+    for col in all_cols:
+        if col in key_cols:
+            continue
+        new_col, old_col = f"{col}_new", f"{col}_old"
+        if new_col in merged.columns and old_col in merged.columns:
+            mask |= merged[new_col].fillna("__NA__").astype(str) != merged[old_col].fillna("__NA__").astype(str)
+        else:
+            mask |= True
+    new_keys = ~df[key_cols].apply(tuple, axis=1).isin(existing_df[key_cols].apply(tuple, axis=1))
+    return df[mask | new_keys]
 
-        placeholders = ", ".join(["%s"] * len(key_cols))
-        select_sql = f"""
-            SELECT {", ".join(f'"{c}"' for c in df.columns)}
-            FROM "{table_name}"
-            WHERE ({", ".join(key_cols)}) IN %s
-        """
-        try:
-            cur.execute(select_sql, (tuple(keys_tuple),))
-            db_rows = cur.fetchall()
-        except Exception as e:
-            print(f"⚠️ Could not check changes for `{table_name}`: {e}")
-            return df  # be conservative: treat all as changed
-
-    db_df = pd.DataFrame(db_rows, columns=list(df.columns))
-    if db_df.empty:
-        return df  # everything is new
-
-    db_df = db_df.sort_values(by=key_cols).reset_index(drop=True)
-    df_sorted = df.sort_values(by=key_cols).reset_index(drop=True)
-    changed_mask = ~df_sorted[non_key_cols].eq(db_df[non_key_cols]).all(axis=1)
-    return df_sorted.loc[changed_mask]
-
-# ---------------- UPSERT ----------------
-def chunk(iterable: Iterable[Tuple], size: int) -> Iterable[List[Tuple]]:
-    batch: List[Tuple] = []
-    for item in iterable:
-        batch.append(item)
-        if len(batch) >= size:
-            yield batch
-            batch = []
-    if batch:
-        yield batch
-
-def upsert_table(df: pd.DataFrame, table_name: str, conn, batch_size: int = 5000) -> None:
+def upsert_table(df: pd.DataFrame, table_name: str, conn, batch_size: int = 500) -> None:
     if df.empty:
-        print(f"⚠️ Skipping empty table: {table_name}")
+        print(f"⏭️  Skipping `{table_name}` — no data.")
         return
 
-    # Detect changed rows only
-    changed = get_changed_rows(df, table_name, conn)
+    changed = diff_dataframe(df, table_name, conn, conflict_cols_for(table_name, list(df.columns)))
     if changed.empty:
-        print(f"✅ No updates needed for `{table_name}`")
+        print(f"✅ `{table_name}` is already up-to-date — nothing to upsert.")
         return
-
-    print(f"🔍 {len(changed)} rows in `{table_name}` will be updated.")
-    preview_cols = [c for c in ["idfg","season","name","team"] if c in changed.columns]
-    if preview_cols:
-        print(changed[preview_cols].head(5))
 
     all_cols = list(df.columns)
     key_cols = conflict_cols_for(table_name, all_cols)
     non_key_cols = [c for c in all_cols if c not in key_cols]
 
-    # Sanity: ensure key columns exist
     missing = [c for c in key_cols if c not in all_cols]
     if missing:
         raise ValueError(f"`{table_name}` upsert missing key columns in payload: {missing}")
 
-    # Preflight: dedupe + ensure unique index
     dupes = count_duplicates(conn, table_name, key_cols)
     if dupes:
         msg = f"♻️ Found {dupes} duplicate row(s) by key {tuple(key_cols)} in `{table_name}`."
