@@ -68,7 +68,8 @@ batting_rename_map = {
     'IFH%': 'ifh_pc', 'BUH%': 'buh_pc', 'Pull%': 'pull_pc', 'Cent%': 'cent_pc',
     'Oppo%': 'oppo_pc', 'Soft%': 'soft_pc', 'Med%': 'med_pc', 'Hard%': 'hard_pc',
     'HardHit%': 'hardhit_pc', 'Barrel%': 'barrel_pc', 'TTO%': 'tto_pc', '+WPA': 'wpa_plus',
-    '-WPA': 'wpa_minus', '1b':'singles','2b':'doubles','3b':'triples'
+    '-WPA': 'wpa_minus', '1b':'singles','2b':'doubles','3b':'triples', "IDfg":"idfg","Season":"season","Name":"name",
+    "Team":'team'
 }
 
 pitching_rename_map = {
@@ -79,7 +80,7 @@ pitching_rename_map = {
     'SwStr%': 'swstr_pc', 'CStr%': 'cstr_pc', 'CSW%': 'csw_pc', 'Barrel%': 'barrel_pc',
     'HardHit%': 'hardhit_pc', 'TTO%': 'tto_pc', 'ERA-': 'era_minus',
     'FIP-': 'fip_minus', 'xFIP-': 'xfip_minus', 'RA9_WAR': 'ra9_war', '+WPA': 'wpa_plus',
-    '-WPA': 'wpa_minus',
+    '-WPA': 'wpa_minus', "IDfg":"idfg","Season":"season","Name":"name","Team":'team'
 }
 
 # ---------------- FB% conflict helper ----------------
@@ -207,8 +208,8 @@ df_bat = finalize_batting(df_bat)
 
 # ---------------- Table splits ----------------
 batting_splits = {
-    "fangraphs_batting_lahman_like": ["idfg", "season", "name", "team", "g", "ab", "pa", "h", "singles", "doubles", "triples", "hr", "r", "rbi", "bb", "ibb", "so", "hbp", "sf", "sh", "gdp", "sb", "cs"],
-    "fangraphs_batting_standard_ratios": ["idfg", "season", "name", "team", "avg", "obp", "slg", "ops", "iso", "babip", "bb_pc", "k_pc", "bb_k", "gdp"],
+    "fangraphs_batting_lahman_like": ["idfg", "season", "name", "team", "g", "ab", "pa", "h", "singles", "doubles", "triples", "hr", "r", "rbi", "bb", "ibb", "so", "hbp", "sf", "sh", "gidp", "sb", "cs"],
+    "fangraphs_batting_standard_ratios": ["idfg", "season", "name", "team", "avg", "obp", "slg", "ops", "iso", "babip", "bb_pc", "k_pc", "bb_k", "gidp"],
     "fangraphs_batting_advanced": ["idfg", "season", "name", "team", "woba", "wraa", "wrc", "wrc_plus", "war", "rar", "bat", "fld", "rep", "pos", "off", "def", "dol"],
     "fangraphs_plate_discipline": ["idfg", "season", "name", "team", "o_swing_pc", "z_swing_pc", "swing_pc", "o_contact_pc", "z_contact_pc", "contact_pc", "zone_pc", "f_strike_pc", "swstr_pc", "cstr_pc", "csw_pc", "wpa", "wpa_li", "clutch", "re24", "rew", "pli", "phli", "ph"],
     "fangraphs_batted_ball": ["idfg", "season", "name", "team", "gb", "fyb", "ld", "iffb", "gb_fb", "ld_pc", "gb_pc", "fyb_pc", "iffb_pc", "hr_fb", "ifh", "ifh_pc", "bu", "buh", "buh_pc", "pull_pc", "cent_pc", "oppo_pc", "soft_pc", "med_pc", "hard_pc", "hardhit", "hardhit_pc", "ev", "la", "barrels", "barrel_pc", "maxev", "tto_pc"],
@@ -222,7 +223,7 @@ pitching_splits = {
     "fangraphs_pitching_advanced": ["idfg", "season", "name", "team", "war", "fip", "xfip", "siera", "era_minus", "fip_minus", "xfip_minus", "rar", "dollars", "ra9_war"],
     "fangraphs_pitching_plate_discipline": ["idfg", "season", "name", "team", "o_swing_pc", "z_swing_pc", "swing_pc", "o_contact_pc", "z_contact_pc", "contact_pc", "zone_pc", "f_strike_pc", "swstr_pc", "cstr_pc", "csw_pc"],
     "fangraphs_pitching_batted_ball": ["idfg", "season", "name", "team", "gb_fb", "ld_pc", "gb_pc", "fyb_pc", "iffb_pc", "hr_fb", "hardhit_pc", "barrel_pc", "ev", "la"],
-    "fangraphs_pitching_pitch_type_summary": ["idfg", "season", "name", "team"],
+    "fangraphs_pitching_pitch_type_summary": ["idfg", "season", "name", "team", "fb_pc", "fbv", "sl_pc", "slv", "ct_pc", "ctv", "cb_pc", "cbv", "ch_pc", "chv", "sf_pc", "sfv", "kn_pc", "knv", "xx_pc", "po_pc", "wfb", "wsl", "wct", "wcb", "wch", "wsf", "wkn"],
 }
 
 def split_dataframe(df: pd.DataFrame, mapping: dict) -> dict:
