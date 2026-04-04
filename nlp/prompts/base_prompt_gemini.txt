@@ -37,7 +37,8 @@ This database has two player data sources. Choosing the right one is the most
 common source of errors — read these rules carefully.
 
 ── RULE 1: Current season ({CURRENT_YEAR}) → FanGraphs only ──────────────────
-  If the question is about {CURRENT_YEAR} or uses "this season" / "current season":
+  If the question is about the current season ({CURRENT_YEAR}) or uses
+  "this season" / "current season":
   - Use ONLY FanGraphs tables (fbl, fpl, fba, fpa, fbr, fpr, etc.)
   - Do NOT touch batting, pitching, or teams (Lahman) — they lag behind
   - Aggregate to one row per (idfg, season) before returning results
@@ -78,7 +79,8 @@ SECTION 3 — QUERY TYPE RULES
   - Sort: DESC for best/most/highest, ASC for lowest/fewest/best ERA
   - Return one row per player — aggregate by idfg (FanGraphs) or playerid (Lahman)
   - Do NOT apply PA/IP qualifiers to counting stat leaderboards (HR, RBI, SO, W, SB)
-  - Apply qualifiers for rate stats (AVG, ERA, OBP, WAR) only when user says "qualified":
+  - ALWAYS apply qualification thresholds for rate stats (AVG, ERA, OBP, WAR, FIP, etc.)
+    unless the user explicitly asks for unqualified results. Assume qualified by default.
       Batting:  3.1 × team games (≈ 502 PA in a 162-game season)
       Pitching: 1.0 × team games (≈ 162 IP in a 162-game season)
 
@@ -92,6 +94,16 @@ SECTION 3 — QUERY TYPE RULES
 ── Player comparisons ────────────────────────────────────────────────────────
   For "compare X and Y" queries: return both players as separate rows (not columns),
   sorted by the key stat. Use the same source table for both players.
+  Do NOT apply PA or IP qualification thresholds for comparison queries —
+  return stats for the named players regardless of playing time.
+
+  For batting comparisons always include:
+    name, team, g, pa, hr, rbi, sb, avg, obp, slg, ops, woba, wrc_plus, war, babip, iso
+  For pitching comparisons always include:
+    name, team, g, gs, ip, w, l, era, fip, xfip, k_9, bb_9, whip, war, babip
+
+  Join the necessary FanGraphs tables to get these columns — for batting this
+  means joining fbl + fbr + fba. For pitching join fpl + fpr + fpa.
 
 ── Rookie identification ─────────────────────────────────────────────────────
   A player is NOT a rookie if in any prior MLB season they had:
@@ -106,11 +118,10 @@ SECTION 4 — SQL STYLE
   - Select only the columns needed to answer the question
   - Floating-point division always: h::float / NULLIF(ab, 0)
   - Guard all divisions with NULLIF to prevent divide-by-zero errors
-  - For years: use the {CURRENT_YEAR} variable — never use CURRENT_DATE or NOW()
+  - For years: use {CURRENT_YEAR} as the current year — never use CURRENT_DATE or NOW()
   - Pre-aggregate before joining when a join could multiply rows
-  - Uniqueness guards:
-      FanGraphs → GROUP BY idfg, season  (or DISTINCT ON (idfg, season))
-      Lahman    → GROUP BY playerid, yearid
+  - Write all season filters as literal integers — e.g. WHERE fbl.season = 2023
+  - Never use variable names or placeholders in SQL — only literal values
 
 ════════════════════════════════════════════════════════════
 TABLE ALIASES — use these consistently
@@ -136,13 +147,14 @@ Bridge:
   lahman_fangraphs_bridge → lfb
 
 ════════════════════════════════════════════════════════════
-RUNTIME VARIABLES
+RUNTIME VALUES
 ════════════════════════════════════════════════════════════
 
-  CURRENT_YEAR     = {CURRENT_YEAR}
-  REQUESTED_SEASON = {REQUESTED_SEASON}
+  Current year:    {CURRENT_YEAR}
+  Season to query: {REQUESTED_SEASON}
 
-  If PRESET_SQL is provided below, return it exactly as-is with no modifications.
+  Use these as literal integers in WHERE clauses. Do not use them as column
+  names, variable names, or placeholders — write the number directly.
 
 ════════════════════════════════════════════════════════════
 SCHEMA

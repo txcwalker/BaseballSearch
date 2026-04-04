@@ -179,27 +179,35 @@ st.markdown("""
 # --- cached resources & helpers ---
 @st.cache_resource(show_spinner=False)
 def get_stat_catalog(_init_fastpath_fn):
-    conn = psycopg2.connect(
-        **DB_PARAMS,
-        connect_timeout=5,
-        options="-c statement_timeout=5000"
-    )
+    """Build the fast-path stat catalog. Returns None if DB is slow — callers must handle."""
     try:
-        return _init_fastpath_fn(conn)
-    finally:
+        conn = psycopg2.connect(
+            **DB_PARAMS,
+            connect_timeout=3,  # short timeout — skip fast-path if DB is cold
+            options="-c statement_timeout=3000"
+        )
         try:
-            conn.close()
-        except Exception:
-            pass
+            return _init_fastpath_fn(conn)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception:
+        return None  # fast-path unavailable, fall through to templates/LLM
 
-@st.cache_data(show_spinner=False, ttl=300)
 def run_sql(sql: str, params: dict | None = None):
+    """Execute SQL and return a DataFrame. No caching — results must always be fresh."""
     with psycopg2.connect(
         **DB_PARAMS,
         connect_timeout=5,
         options="-c statement_timeout=15000"
     ) as conn:
-        return pd.read_sql_query(sql, conn, params=params or {})
+        with conn.cursor() as cur:
+            cur.execute(sql, params or {})
+            cols = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+    return pd.DataFrame(rows, columns=cols)
 
 def looks_like_sql(s: str) -> bool:
     lo = (s or "").lstrip().lower()
@@ -221,9 +229,10 @@ try_fastpath = None
 route_template = None
 lint_sql = None
 enforce_leaders_invariants = None
+tr = None
 
 def load_nlp_modules():
-    global _NLP_LOADED, gsql, init_fastpath, try_fastpath, route_template, lint_sql, enforce_leaders_invariants
+    global _NLP_LOADED, gsql, init_fastpath, try_fastpath, route_template, lint_sql, enforce_leaders_invariants, tr
     if _NLP_LOADED:
         return
     import importlib
@@ -242,10 +251,10 @@ STAT_CATALOG = None
 
 # Example queries for chips
 EXAMPLE_QUERIES = [
-    "Top 10 home run hitters since 2015",
+    "Top Home Run hitters since 2015?",
     "Shohei Ohtani's WAR by season",
     "Best ERA among qualified pitchers in 2023",
-    "Compare Mike Trout and Mookie Betts in 2023",
+    "Compare Mike Trout and Mookie Betts in 2022",
     "Which pitchers had the biggest FIP vs ERA gap since 2018?",
     "Most strikeouts by a pitcher in a single season since 2010",
 ]
@@ -397,61 +406,91 @@ def render_home():
 
     if query_to_run:
         norm_q, season = gsql.normalize_query(query_to_run)
-        sql_query, bound_params = None, {}
+        sql_query = None
+        bound_params = {}
+
+        # Check SQL cache — avoid re-calling Gemini for the same question
+        _sql_cache = st.session_state.setdefault("sql_cache", {})
+        _cache_key = norm_q.lower().strip()
+        if _cache_key in _sql_cache:
+            sql_query, bound_params = _sql_cache[_cache_key]
+            if DEBUG_UI:
+                st.info("Using cached SQL (skipping LLM)")
 
         with st.spinner("🔍 Translating your question to SQL..."):
-            # 0) fast-path
-            if STAT_CATALOG is not None:
-                fast_sql = try_fastpath(
-                    question=norm_q, season=season, conn=None,
-                    stat_catalog=STAT_CATALOG, top_n=10,
-                    qualified=("qualified" in norm_q.lower())
-                )
-                if fast_sql:
+
+            # Skip all translation if we already have SQL from cache
+            if sql_query is None:
+
+                # 0) fast-path catalog (leaderboard shortcuts)
+                if STAT_CATALOG is not None:
                     try:
-                        fast_sql = lint_sql(fast_sql)
-                        fast_sql = enforce_leaders_invariants(fast_sql)
-                        sql_query = fast_sql
-                        if DEBUG_UI:
-                            st.info("Using fast-path leaders (validated).")
+                        fast_sql = try_fastpath(
+                            question=norm_q, season=season, conn=None,
+                            stat_catalog=STAT_CATALOG, top_n=10,
+                            qualified=True
+                        )
+                        if fast_sql:
+                            fast_sql = lint_sql(fast_sql)
+                            sql_query = fast_sql
+                            if DEBUG_UI:
+                                st.info("Using fast-path.")
                     except Exception as e:
                         if DEBUG_UI:
-                            st.warning(f"Fast-path rejected ({e}); falling back to templates.")
+                            st.warning(f"Fast-path error ({e}), skipping.")
 
-            # 1) template router
+            # 1) direct template router
             if sql_query is None and use_templates:
                 try:
-                    tmpl_sql, bound_params = route_template(norm_q, season, templates_yaml)
+                    tmpl_sql, tmpl_params, tmpl_name = tr.build_sql_from_templates(norm_q, templates_yaml)
                     if tmpl_sql:
+                        # Only apply lint — skip enforce_leaders_invariants for direct templates
+                        # (they are pre-validated; enforcer rejects them for not having DISTINCT ON)
                         tmpl_sql = lint_sql(tmpl_sql)
-                        tmpl_sql = enforce_leaders_invariants(tmpl_sql)
                         sql_query = tmpl_sql
+                        bound_params = tmpl_params or {}
+                        _sql_cache[_cache_key] = (sql_query, bound_params)
                         if DEBUG_UI:
-                            st.info("Using template router (validated).")
+                            st.info(f"Using template: {tmpl_name}")
                 except Exception as e:
+                    # Template failed — log but keep sql_query=None so LLM runs
+                    sql_query = None
+                    bound_params = {}
                     if DEBUG_UI:
-                        st.warning(f"Template router failed ({e}); falling back to LLM.")
+                        st.warning(f"Template router error ({e}), falling back to LLM.")
 
             # 2) LLM fallback
             if sql_query is None:
                 try:
                     prompt = gsql.build_prompt(norm_q, schema_str, prompt_template, season)
+                    # Temp diagnostic — remove after confirming fix
                     if show_prompt:
                         st.text_area("LLM Prompt", prompt, height=200)
-                    raw_sql = gsql.get_sql_from_gemini(prompt)
+                    raw_sql = None
+                    for attempt in range(2):
+                        try:
+                            raw_sql = gsql.get_sql_from_gemini(prompt)
+                            if raw_sql:
+                                break
+                        except Exception as gemini_err:
+                            if attempt == 1:
+                                raise
+                            if DEBUG_UI:
+                                st.warning(f"Gemini attempt {attempt+1} failed, retrying...")
                     if DEBUG_UI:
                         st.text_area("Raw LLM SQL", raw_sql, height=120)
                     action = gsql.handle_model_response(raw_sql, season)
-                    if DEBUG_UI:
-                        st.info(f"handle_model_response returned: {repr(action)}")
                     if action and action != "__REPROMPT__":
-                        st.error("The model response was rejected.")
+                        st.error("Couldn't answer that question — try rephrasing it.")
                         if DEBUG_UI:
-                            st.info(action)
+                            st.info(f"Model response: {action}")
                         st.stop()
                     sql_query = raw_sql
+                    bound_params = {}  # LLM SQL uses no bound params
+                    # Cache this SQL so reruns don't re-call Gemini
+                    _sql_cache[_cache_key] = (sql_query, bound_params)
                 except Exception as e:
-                    st.error("Failed to generate SQL from your question.")
+                    st.error(f"Failed to generate SQL: {type(e).__name__}: {e}")
                     if DEBUG_UI:
                         st.exception(e)
                     st.stop()
@@ -460,12 +499,12 @@ def render_home():
                 st.error("Could not generate executable SQL for that question. Try rephrasing it.")
                 st.stop()
 
+            # Final lint only — no enforce_leaders_invariants (it rejects valid LLM SQL)
             try:
                 sql_query = lint_sql(sql_query)
-                sql_query = enforce_leaders_invariants(sql_query)
             except Exception as e:
                 if DEBUG_UI:
-                    st.warning(f"Post-processing of model SQL failed: {e}")
+                    st.warning(f"SQL lint warning: {e}")
 
         if DEBUG_UI and st.toggle("Show generated SQL", value=False):
             st.code(sql_query, language="sql")
@@ -476,7 +515,7 @@ def render_home():
                 df_result = run_sql(sql_query, bound_params)
                 df_result = title_case_columns(df_result)
             except Exception as e:
-                st.error("Query failed. This question may be outside what the database supports.")
+                st.error(f"Query failed: {type(e).__name__}: {e}")
                 if DEBUG_UI:
                     st.exception(e)
                     if st.toggle("Show failed SQL?", value=False):

@@ -92,11 +92,10 @@ with st.expander("📋 More Example Queries to Try", expanded=False):
     Copy any of these into the search box on the home page:
 
     - *"What were the top 5 WAR seasons for position players since 2000?"*
-    - *"Show me Clayton Kershaw's ERA and FIP by season"*
     - *"Which teams had the best bullpen ERA in 2022?"*
     - *"List the top 10 OPS seasons since 2015 among qualified hitters"*
     - *"How many strikeouts did Gerrit Cole have in each season since 2018?"*
-    - *"What hitters had the highest ISO in 2021?"*
+    - *"What hitters had the highest Isolated Power in 2021?"*
     - *"Compare the batting averages of all AL East teams in 2023"*
     """)
 
