@@ -79,7 +79,7 @@ jobs:
         run: |
           python etl/update_fangraphs_playwright.py
 
-      - name: 🧹 Cleanup: Revoke Runner IP
+      - name: "🧹 Cleanup: Revoke Runner IP"
         if: always() && steps.season_check.outputs.in_season == 'true'
         run: |
           aws ec2 revoke-security-group-ingress \
