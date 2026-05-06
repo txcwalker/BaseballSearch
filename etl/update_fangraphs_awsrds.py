@@ -14,10 +14,12 @@ from typing import Iterable, List, Tuple, Dict
 
 import pandas as pd
 import psycopg2
+import requests
 from psycopg2.extras import execute_values
 from pybaseball import batting_stats, pitching_stats
 from dotenv import load_dotenv
 
+<<<<<<< HEAD
 # ---------------------------------------------------------------
 # FanGraphs 403 fix: patch requests with a real browser User-Agent
 # GitHub Actions runners get blocked without this.
@@ -42,16 +44,32 @@ def _patched_get(self, url, **kwargs):
 
 requests.Session.get = _patched_get
 # ---------------------------------------------------------------
+=======
+# --- FanGraphs 403 Bypass (Monkeypatch) ---
+# FanGraphs blocks requests without a browser-like User-Agent.
+# Since pybaseball doesn't expose headers, we patch requests globally.
+original_get = requests.get
+def patched_get(*args, **kwargs):
+    headers = kwargs.get('headers', {})
+    if not headers:
+        headers = {}
+    if 'User-Agent' not in headers:
+        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    kwargs['headers'] = headers
+    return original_get(*args, **kwargs)
+requests.get = patched_get
+# ------------------------------------------
+>>>>>>> a28a2b4 ("Fixing Autoloader, adding OIDC auth and fangraphs)
 
 # ---------------- Env & DB params ----------------
 load_dotenv(Path(__file__).resolve().parents[1] / ".env.awsrds")
 
 DB_PARAMS = {
-    "dbname": os.getenv("AWSDATABASE"),
-    "user": os.getenv("AWSUSER"),
-    "password": os.getenv("AWSPASSWORD"),
-    "host": os.getenv("AWSHOST"),
-    "port": os.getenv("AWSPORT"),
+    "dbname": os.getenv("AWSDATABASE") or os.getenv("PGDATABASE"),
+    "user": os.getenv("AWSUSER") or os.getenv("PGUSER"),
+    "password": os.getenv("AWSPASSWORD") or os.getenv("PGPASSWORD"),
+    "host": os.getenv("AWSHOST") or os.getenv("PGHOST"),
+    "port": os.getenv("AWSPORT") or os.getenv("PGPORT"),
 }
 
 # Optional behavior

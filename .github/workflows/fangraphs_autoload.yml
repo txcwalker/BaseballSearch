@@ -7,6 +7,7 @@ on:
 
 jobs:
   update-awsrds:
+<<<<<<< HEAD
     runs-on: ubuntu-latest  # ✅ GitHub-hosted runner (free) — replaces self-hosted EC2
 
     env:
@@ -15,6 +16,12 @@ jobs:
       AWSDATABASE: ${{ secrets.AWSDATABASE }}
       AWSUSER: ${{ secrets.AWSUSER }}
       AWSPASSWORD: ${{ secrets.AWSPASSWORD }}
+=======
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # This is required for requesting the JWT
+      contents: read   # This is required for actions/checkout
+>>>>>>> a28a2b4 ("Fixing Autoloader, adding OIDC auth and fangraphs)
 
     steps:
       - name: 📅 Check if MLB season is active
@@ -46,13 +53,18 @@ jobs:
         uses: actions/checkout@v3
 
       - name: 🐍 Set up Python 3.11
+<<<<<<< HEAD
         if: steps.season_check.outputs.in_season == 'true'
         uses: actions/setup-python@v5
+=======
+        uses: actions/setup-python@v4
+>>>>>>> a28a2b4 ("Fixing Autoloader, adding OIDC auth and fangraphs)
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: 📦 Install dependencies
+<<<<<<< HEAD
         if: steps.season_check.outputs.in_season == 'true'
         run: |
           python -m pip install --upgrade pip
@@ -62,3 +74,45 @@ jobs:
         if: steps.season_check.outputs.in_season == 'true'
         run: |
           python etl/update_fangraphs_awsrds.py
+=======
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_etl.txt
+
+      - name: 🌐 Get Runner Public IP
+        id: ip
+        run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
+
+      - name: 🔐 Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: 🧱 Whitelist Runner IP in RDS SG
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id ${{ secrets.RDS_SECURITY_GROUP_ID }} \
+            --protocol tcp \
+            --port 5432 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32
+
+      - name: 🔄 Run AWS RDS ETL update
+        env:
+          AWSHOST: ${{ secrets.AWSHOST }}
+          AWSPORT: ${{ secrets.AWSPORT }}
+          AWSDATABASE: ${{ secrets.AWSDATABASE }}
+          AWSUSER: ${{ secrets.AWSUSER }}
+          AWSPASSWORD: ${{ secrets.AWSPASSWORD }}
+        run: |
+          python etl/update_fangraphs_awsrds.py
+
+      - name: 🧹 Cleanup: Revoke Runner IP
+        if: always()
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id ${{ secrets.RDS_SECURITY_GROUP_ID }} \
+            --protocol tcp \
+            --port 5432 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32
+>>>>>>> a28a2b4 ("Fixing Autoloader, adding OIDC auth and fangraphs)
