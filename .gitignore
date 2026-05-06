@@ -24,7 +24,6 @@ streamlit/components
 test_mode
 utils.py
 
-
 # IDE
 .vscode/
 .idea/
@@ -38,3 +37,4 @@ Thumbs.db
 data/
 outputs/
 *.csv
+.venv/

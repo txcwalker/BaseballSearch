@@ -7,21 +7,10 @@ on:
 
 jobs:
   update-awsrds:
-<<<<<<< HEAD
-    runs-on: ubuntu-latest  # ✅ GitHub-hosted runner (free) — replaces self-hosted EC2
-
-    env:
-      AWSHOST: ${{ secrets.AWSHOST }}
-      AWSPORT: ${{ secrets.AWSPORT }}
-      AWSDATABASE: ${{ secrets.AWSDATABASE }}
-      AWSUSER: ${{ secrets.AWSUSER }}
-      AWSPASSWORD: ${{ secrets.AWSPASSWORD }}
-=======
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # This is required for requesting the JWT
-      contents: read   # This is required for actions/checkout
->>>>>>> a28a2b4 ("Fixing Autoloader, adding OIDC auth and fangraphs)
+      id-token: write
+      contents: read
 
     steps:
       - name: 📅 Check if MLB season is active
@@ -29,16 +18,8 @@ jobs:
         run: |
           MONTH=$(date -u +%-m)
           DAY=$(date -u +%-d)
-
-          # -------------------------------------------------------
-          # ⬇️  UPDATE THESE TWO DATES EACH YEAR IF NEEDED  ⬇️
-          # Format: MMDD  (month + day, zero-padded, no separator)
-          # Examples: Mar 20 = 0320, Oct 31 = 1031, Nov 5 = 1105
-          #
-          SEASON_START="0320"   # ⬅️ A few days before Opening Day
-          SEASON_END="1105"     # ⬅️ A few days after latest possible World Series Game 7
-          # -------------------------------------------------------
-
+          SEASON_START="0320"
+          SEASON_END="1105"
           MMDD=$(printf "%02d%02d" $MONTH $DAY)
           if [[ "$MMDD" < "$SEASON_START" || "$MMDD" > "$SEASON_END" ]]; then
             echo "⚾ Off-season detected ($MONTH/$DAY) — skipping ETL."
@@ -53,43 +34,33 @@ jobs:
         uses: actions/checkout@v3
 
       - name: 🐍 Set up Python 3.11
-<<<<<<< HEAD
         if: steps.season_check.outputs.in_season == 'true'
-        uses: actions/setup-python@v5
-=======
         uses: actions/setup-python@v4
->>>>>>> a28a2b4 ("Fixing Autoloader, adding OIDC auth and fangraphs)
         with:
           python-version: '3.11'
           cache: 'pip'
 
       - name: 📦 Install dependencies
-<<<<<<< HEAD
         if: steps.season_check.outputs.in_season == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements_etl.txt
-
-      - name: 🔄 Run AWS RDS ETL update
-        if: steps.season_check.outputs.in_season == 'true'
-        run: |
-          python etl/update_fangraphs_awsrds.py
-=======
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements_etl.txt
+          npx playwright install chromium --with-deps
 
       - name: 🌐 Get Runner Public IP
+        if: steps.season_check.outputs.in_season == 'true'
         id: ip
         run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
 
       - name: 🔐 Configure AWS Credentials (OIDC)
+        if: steps.season_check.outputs.in_season == 'true'
         uses: aws-actions/configure-aws-credentials@v3
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: 🧱 Whitelist Runner IP in RDS SG
+        if: steps.season_check.outputs.in_season == 'true'
         run: |
           aws ec2 authorize-security-group-ingress \
             --group-id ${{ secrets.RDS_SECURITY_GROUP_ID }} \
@@ -97,7 +68,8 @@ jobs:
             --port 5432 \
             --cidr ${{ steps.ip.outputs.ipv4 }}/32
 
-      - name: 🔄 Run AWS RDS ETL update
+      - name: 🔄 Run AWS RDS ETL update (Playwright)
+        if: steps.season_check.outputs.in_season == 'true'
         env:
           AWSHOST: ${{ secrets.AWSHOST }}
           AWSPORT: ${{ secrets.AWSPORT }}
@@ -105,14 +77,13 @@ jobs:
           AWSUSER: ${{ secrets.AWSUSER }}
           AWSPASSWORD: ${{ secrets.AWSPASSWORD }}
         run: |
-          python etl/update_fangraphs_awsrds.py
+          python etl/update_fangraphs_playwright.py
 
       - name: 🧹 Cleanup: Revoke Runner IP
-        if: always()
+        if: always() && steps.season_check.outputs.in_season == 'true'
         run: |
           aws ec2 revoke-security-group-ingress \
             --group-id ${{ secrets.RDS_SECURITY_GROUP_ID }} \
             --protocol tcp \
             --port 5432 \
             --cidr ${{ steps.ip.outputs.ipv4 }}/32
->>>>>>> a28a2b4 ("Fixing Autoloader, adding OIDC auth and fangraphs)
