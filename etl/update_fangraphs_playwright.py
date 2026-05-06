@@ -1,11 +1,14 @@
 # etl/update_fangraphs_playwright.py
+# (Reusing this filename so GitHub Actions doesn't break)
 import os
 import time
+import json
 from datetime import date
 from pathlib import Path
 import pandas as pd
 import pg8000.native
-from curl_cffi import requests
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
 from dotenv import load_dotenv
 
 # ---------------- Env & DB params ----------------
@@ -21,45 +24,56 @@ DB_CONFIG = {
 
 YEAR = date.today().year
 
-# ---------------- Fetcher Logic (The Secret Agent) ----------------
-def fetch_fangraphs_stealth(stats_type: str, year: int) -> pd.DataFrame:
+# ---------------- Fetcher Logic (Undetected Chromedriver) ----------------
+def fetch_fangraphs_uc(stats_type: str, year: int) -> pd.DataFrame:
     api_url = f"https://www.fangraphs.com/api/leaders/major-league/data?age=&pos=all&stats={stats_type}&lg=all&qual=0&type=8&season={year}&month=0&season1={year}&ind=0&team=0&rost=0&filter=&players=0&pageitems=10000"
     
-    print(f"🕵️  Creating browser session for {stats_type} {year}...")
+    print(f"🕵️  Booting undetected Chrome for {stats_type} {year}...")
     
-    # Create a session to hold cookies
-    s = requests.Session()
+    options = uc.ChromeOptions()
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
     
-    # Step 1: Visit the main leaders page to get cookies/session
-    s.get("https://www.fangraphs.com/leaders/major-league", impersonate="chrome120")
-    time.sleep(2) # Wait like a human
-    
-    print(f"📡 Requesting API data...")
-    headers = {
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-        "Referer": f"https://www.fangraphs.com/leaders/major-league?stats={stats_type}",
-        "X-Requested-With": "XMLHttpRequest",
-    }
+    # Initialize the undetectable browser
+    driver = uc.Chrome(options=options)
     
     try:
-        resp = s.get(api_url, headers=headers, impersonate="chrome120", timeout=30)
+        # Step 1: Visit home page to solve Cloudflare challenge and get cookies
+        print(f"📡 Handshaking with Cloudflare...")
+        driver.get("https://www.fangraphs.com/leaders/major-league")
+        time.sleep(5) # Wait for challenge to process
         
-        if resp.status_code != 200:
-            print(f"❌ Status {resp.status_code}. (Your local IP might be temporarily blocked).")
-            return pd.DataFrame()
+        # Step 2: Navigate to the API JSON endpoint
+        print(f"📡 Requesting JSON API...")
+        driver.get(api_url)
+        time.sleep(3)
+        
+        # Extract the JSON from the pre/body tag
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+        
+        try:
+            data = json.loads(body_text)
+            df = pd.DataFrame(data['data'] if 'data' in data else data)
             
-        data = resp.json()
-        df = pd.DataFrame(data['data'] if 'data' in data else data)
-        
-        if not df.empty:
-            print(f"✅ Success! Fetched {len(df)} rows.")
-            # Rename and normalize
-            rename_map = {'PlayerName': 'name', 'playerid': 'idfg', 'TeamNameAbbreviation': 'team', 'TeamName': 'team'}
-            df.columns = [c.lower() for c in df.columns]
-            df.rename(columns=rename_map, inplace=True)
-            return df
+            if not df.empty:
+                print(f"✅ Success! Fetched {len(df)} rows.")
+                rename_map = {'PlayerName': 'name', 'playerid': 'idfg', 'TeamNameAbbreviation': 'team', 'TeamName': 'team'}
+                df.columns = [c.lower() for c in df.columns]
+                df.rename(columns=rename_map, inplace=True)
+                return df
+            else:
+                print("⚠️ Loaded JSON, but it was empty.")
+        except json.JSONDecodeError:
+            print("❌ Failed to parse JSON. Cloudflare might still be showing a Captcha page.")
+            print(f"Page output snippet: {body_text[:200]}")
+            
     except Exception as e:
         print(f"❌ Error: {e}")
+    finally:
+        driver.quit()
+        
     return pd.DataFrame()
 
 # ---------------- Database Logic ----------------
@@ -106,7 +120,7 @@ def main():
     db = pg8000.native.Connection(**DB_CONFIG)
     try:
         # Batting
-        df_bat = fetch_fangraphs_stealth('bat', YEAR)
+        df_bat = fetch_fangraphs_uc('bat', YEAR)
         if not df_bat.empty:
             df_bat['season'] = YEAR
             df_bat = clean_and_normalize(df_bat)
@@ -115,8 +129,9 @@ def main():
                 if len(valid) >= 4:
                     print(f"📁 Updating {t}...")
                     upsert_table_pg8000(db, df_bat[valid], t)
+        
         # Pitching
-        df_pit = fetch_fangraphs_stealth('pit', YEAR)
+        df_pit = fetch_fangraphs_uc('pit', YEAR)
         if not df_pit.empty:
             df_pit['season'] = YEAR
             df_pit = clean_and_normalize(df_pit)

@@ -14,6 +14,5 @@ python-dotenv
 referencing
 requests
 streamlit
-playwright
-pytest-playwright
-curl_cffi
+undetected-chromedriver
+selenium
