@@ -24,6 +24,17 @@ DB_CONFIG = {
 
 YEAR = date.today().year
 
+import subprocess
+
+def get_chrome_major_version():
+    try:
+        process = subprocess.Popen(['google-chrome', '--version'], stdout=subprocess.PIPE)
+        output, _ = process.communicate()
+        version_string = output.decode('utf-8').strip()
+        return int(version_string.split()[2].split('.')[0])
+    except:
+        return None
+
 # ---------------- Fetcher Logic (Undetected Chromedriver) ----------------
 def fetch_fangraphs_uc(stats_type: str, year: int) -> pd.DataFrame:
     api_url = f"https://www.fangraphs.com/api/leaders/major-league/data?age=&pos=all&stats={stats_type}&lg=all&qual=0&type=8&season={year}&month=0&season1={year}&ind=0&team=0&rost=0&filter=&players=0&pageitems=10000"
@@ -37,7 +48,13 @@ def fetch_fangraphs_uc(stats_type: str, year: int) -> pd.DataFrame:
     options.add_argument('--disable-dev-shm-usage')
     
     # Initialize the undetectable browser
-    driver = uc.Chrome(options=options)
+    chrome_version = get_chrome_major_version()
+    print(f"⚙️  Detected Chrome Version: {chrome_version}")
+    
+    if chrome_version:
+        driver = uc.Chrome(options=options, version_main=chrome_version)
+    else:
+        driver = uc.Chrome(options=options)
     
     try:
         # Step 1: Visit home page to solve Cloudflare challenge and get cookies
