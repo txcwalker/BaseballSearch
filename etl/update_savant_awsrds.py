@@ -10,6 +10,8 @@ import pybaseball
 from pybaseball import chadwick_register
 from curl_cffi import requests
 from dotenv import load_dotenv
+import re
+import sys
 
 # Enable caching to speed up pybaseball
 pybaseball.cache.enable()
@@ -64,26 +66,30 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
     if player_type == 'pitcher':
         url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=p_game,p_started,p_save,p_win,p_loss,p_shutout,p_complete_game,p_strikeout,p_walk,p_era,p_earned_run,p_run,p_hit,p_home_run,batting_avg,on_base_percent,slg_percent,on_base_plus_slg,xba,xslg,xwoba,xobp,xiso,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,chase_percent,whiff_percent,zone_percent,putaway_percent,fastball_avg_speed,fastball_avg_spin,breaking_avg_spin,release_extension&chart=false&x=p_game&y=p_game&r=no&chartType=scatter&csv=true"
 
-    try:
-        # Impersonate to bypass any basic scraping protections
-        resp = requests.get(url, impersonate="chrome120", timeout=30)
-        df = pd.read_csv(io.StringIO(resp.text))
-        
-        # Clean up column names
-        df.columns = [c.lower().replace('.', '').replace(' ', '_').replace(',', '') for c in df.columns]
-        
-        # Standardize the name column
-        if 'last_name_first_name' in df.columns:
-            df.rename(columns={'last_name_first_name': 'name'}, inplace=True)
+    for attempt in range(3):
+        try:
+            # Impersonate to bypass any basic scraping protections
+            resp = requests.get(url, impersonate="chrome120", timeout=30)
+            df = pd.read_csv(io.StringIO(resp.text))
             
-        if 'player_id' not in df.columns and 'id' in df.columns:
-            df.rename(columns={'id': 'player_id'}, inplace=True)
+            # Robust column cleaning: lowercase, spaces to underscores, remove all non-alphanumeric/underscore
+            df.columns = [re.sub(r'[^a-z0-9_]', '', c.lower().replace(' ', '_')) for c in df.columns]
             
-        print(f"✅ Success! Fetched {len(df)} rows.")
-        return df
-    except Exception as e:
-        print(f"❌ Failed to download CSV: {e}")
-        return pd.DataFrame()
+            # Standardize common names
+            if 'last_name_first_name' in df.columns:
+                df.rename(columns={'last_name_first_name': 'name'}, inplace=True)
+                
+            if 'player_id' not in df.columns and 'id' in df.columns:
+                df.rename(columns={'id': 'player_id'}, inplace=True)
+                
+            print(f"✅ Success! Fetched {len(df)} rows.")
+            return df
+        except Exception as e:
+            print(f"⚠️ Attempt {attempt+1} failed to download CSV: {e}")
+            time.sleep(2)
+            
+    print("❌ All attempts to download CSV failed.")
+    return pd.DataFrame()
 
 
 # ---------------- Database Logic ----------------
@@ -97,7 +103,9 @@ def clean_and_normalize(df: pd.DataFrame) -> pd.DataFrame:
                 out[col] = col_str.str.replace('%', '', regex=False).str.strip()
             try: out[col] = pd.to_numeric(out[col], errors='ignore')
             except: pass
-    return out.fillna(0.0)
+            
+    # Replace NaN with None for database compatibility
+    return out.where(pd.notnull(out), None)
 
 def create_table_if_not_exists(db: pg8000.native.Connection, df: pd.DataFrame, table_name: str, key_cols: list):
     cols = []
@@ -177,7 +185,17 @@ def update_id_bridge(db: pg8000.native.Connection):
 # ---------------- MAIN ----------------
 def main():
     print("🔌 Connecting to AWS RDS...")
-    db = pg8000.native.Connection(**DB_CONFIG)
+    db = None
+    # Retry connection in case SG hasn't propagated yet
+    for i in range(5):
+        try:
+            db = pg8000.native.Connection(**DB_CONFIG)
+            print("✅ Connected to database.")
+            break
+        except Exception as e:
+            if i == 4: raise e
+            print(f"⏳ Waiting for connection (attempt {i+1}/5)...")
+            time.sleep(5)
     
     try:
         # Update the ID bridge once per run to keep joins working
