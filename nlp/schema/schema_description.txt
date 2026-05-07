@@ -414,229 +414,141 @@ lgid (text) - league
 playerid (text) - PLayer ID
 salary (integer) - salary
 
-28. fangraphs_batting_lahman_like
+28. savant_batting_traditional
 Description: Batting Counting stats aligned to Lahman
 
-idfg (integer) – FanGraphs player ID.
-season (integer) – Season year.
-name (text) – Player name.
+player_id (integer) – MLBAM player ID.
+year (integer) – Season year.
+last_name, first_name (text) – Player name.
 team (text) – Team abbreviation.
-g (integer) – Games.
-ab (integer) – At-bats.
-pa (integer) – Plate appearances (use for qualifiers).
-h (integer) – Hits.
-singles (integer) – Singles.
-doubles (integer) – Doubles.
-triples (integer) – Triples.
-hr (integer) – Home runs.
-r (integer) – Runs.
-rbi (integer) – Runs batted in.
-bb (integer) – Walks.
-ibb (integer) – Intentional walks.
-so (integer) – Strikeouts.
-hbp (integer) – Hit by pitch.
-sf (integer) – Sacrifice flies.
-sh (integer) – Sacrifice bunts.
-sb (integer) – Stolen bases.
-cs (integer) – Caught stealing.
+b_game (integer) – Games.
+b_ab (integer) – At-bats.
+b_total_pa (integer) – Plate appearances.
+b_total_hits (integer) – Hits.
+b_single (integer) – Singles.
+b_double (integer) – Doubles.
+b_triple (integer) – Triples.
+b_home_run (integer) – Home runs.
+b_rbi (integer) – Runs batted in.
+b_walk (integer) – Walks.
+b_strikeout (integer) – Strikeouts.
 
 
-29. fangraphs_batting_standard_ratios
+29. savant_batting_ratios
 Description: Common Batting ratio stats
 
-idfg, season, name, team – Identifiers.
-avg (numeric) – Batting average (H/AB).
-obp (numeric) – On-base percentage.
-slg (numeric) – Slugging percentage.
-ops (numeric) – OBP + SLG.
-iso (numeric) – Isolated power (SLG–AVG).
-babip (numeric) – Batting avg on balls in play.
-bb_pc (numeric) – Walk rate (BB/PA).
-k_pc (numeric) – Strikeout percentage (SO/PA).
+player_id, year, last_name, first_name – Identifiers.
+batting_avg (numeric) – Batting average (H/AB).
+on_base_percent (numeric) – On-base percentage.
+slg_percent (numeric) – Slugging percentage.
+on_base_plus_slg (numeric) – OPS (OBP + SLG).
+isolated_power (numeric) – Isolated power (SLG–AVG).
+b_bb_percent (numeric) – Walk rate (BB/PA).
+b_k_percent (numeric) – Strikeout percentage (SO/PA).
 bb_k (numeric) – Walk-to-strikeout ratio.
-gdp (integer) – Grounded into double plays.
 
 
-30. fangraphs_batting_advanced
-Description: Advanced value Metrics
+30. savant_batting_expected
+Description: Expected and Luck Metrics
 
-idfg, season, name, team – Identifiers.
-woba (numeric) – Weighted on-base average.
-wraa (numeric) – Weighted runs above average.
-wrc (numeric) – Weighted runs created.
-wrc_plus (integer) – wRC+ (park/league adj, 100=avg).
-war (numeric) – Wins above replacement (FG).
-rar (numeric) – Runs above replacement.
-bat (numeric) – Batting runs.
-fld (numeric) – Fielding runs.
-rep (numeric) – Replacement runs.
-pos (numeric) – Positional runs.
-off (numeric) – Bat+run value (bat+br).
-def (numeric) – Fielding+positional value.
-dol (numeric) – Dollar value estimate.
+player_id, year – Identifiers.
+xwoba (numeric) – Expected wOBA.
+xba (numeric) – Expected Batting Average.
+xslg (numeric) – Expected Slugging Percentage.
+xobp (numeric) – Expected On-Base Percentage.
+xiso (numeric) – Expected Isolated Power.
+wobacon_diff (numeric) – Luck metric on contact (Actual - Expected).
+barrel_batted_rate (numeric) – Barrel percentage.
+sweet_spot_percent (numeric) – Sweet spot percentage (8-32 degrees).
+hard_hit_percent (numeric) – Hard hit percentage (95+ mph).
 
 
-31. fangraphs_plate_discipline
-Description: Hitting Swing/contact/zone rates and clutch
+31. savant_batting_physics
+Description: Batting Power and Speed Metrics
 
-idfg, season, name, team – Identifiers.
-o_swing_pc (numeric) – Swings at pitches outside zone.
-z_swing_pc (numeric) – Swings at pitches in zone.
-swing_pc (numeric) – Overall swing rate.
-o_contact_pc (numeric) – Contact on out-of-zone swings.
-z_contact_pc (numeric) – Contact on in-zone swings.
-contact_pc (numeric) – Overall contact rate.
-zone_pc (numeric) – Pitches in strike zone seen.
-f_strike_pc (numeric) – First-pitch strike rate.
-swstr_pc (numeric) – Swinging-strike rate.
-cstr_pc (numeric) – Called-strike rate.
-csw_pc (numeric) – Called + swinging strike rate.
-wpa (numeric) – Win probability added.
-wpa_li (numeric) – WPA / leverage index.
-clutch (numeric) – Situational performance index.
-re24 (numeric) – Runs vs average (24 states).
-rew (numeric) – Win expectancy runs.
-pli (numeric) – Average leverage index.
-phli (numeric) – PH leverage index.
-ph (integer) – Pinch-hit appearances.
+player_id, year – Identifiers.
+exit_velocity_avg (numeric) – Average exit velocity (mph).
+launch_angle_avg (numeric) – Average launch angle (degrees).
+sprint_speed (numeric) – Average top sprint speed (ft/sec).
+hp_to_first (numeric) – Home to first time (seconds).
 
 
-32. fangraphs_batted_ball
-Description: Batted Ball types, quality and direction
+32. savant_batting_discipline
+Description: Swing Decision and Plate Vision Metrics
 
-idfg, season, name, team – Identifiers.
-gb, fyb, ld, iffb (integers) – ground balls/fly balls/line drives/infield fly balls.
-gb_fb (numeric) – GB/FB ratio.
-ld_pc, gb_pc, fyb_pc, iffb_pc (numeric) – line drive percentage, ground ball percentage, fly ball percentage, infield fly ball percentage
-hr_fb (numeric) – HR per fly ball.
-ifh (integer) – Infield hits.
-ifh_pc (numeric) – Infield hit rate.
-bu, buh (integers) – Bunts / bunt hits.
-buh_pc (numeric) – Bunt hit rate.
-pull_pc, cent_pc, oppo_pc (numeric) – Spray rates.
-soft_pc, med_pc, hard_pc (numeric) – Contact quality rates.
-hardhit (integer) – Hard-hit balls count.
-hardhit_pc (numeric) – Hard-hit rate.
-ev (numeric) – Avg exit velocity (mph).
-la (numeric) – Avg launch angle (deg).
-barrels (integer) – Barrel count.
-barrel_pc (numeric) – Barrel rate.
-maxev (numeric) – Max exit velocity (mph).
-tto_pc (numeric) – True outcomes rate (BB/SO/HR).
+player_id, year – Identifiers.
+zone_swing_percent (numeric) – Swing rate in the zone.
+zone_contact_percent (numeric) – Contact rate in the zone.
+chase_percent (numeric) – Swing rate outside the zone.
+whiff_percent (numeric) – Miss rate on swings.
+meatball_swing_percent (numeric) – Swing rate on middle-middle pitches.
+meatball_percent (numeric) – Percentage of pitches seen down the middle.
 
 
-33. fangraphs_baserunning_fielding
-Description: Base running and double play avoidance
-
-idfg, season, name, team – Identifiers.
-bsr (numeric) – Base running value.
-spd (numeric) – Speed score.
-wsb (numeric) – SB runs (wSB).
-ubr (numeric) – Baserunning runs (non-SB).
-wgdp (numeric) – Runs from avoiding GIDP.
-
-
-34. fangraphs_batter_pitch_type_summary
-Description: Hitters results by pitch types
-
-idfg, season, name, team – Identifiers.
-fb_pc, sl_pc, ch_pc, cb_pc, sf_pc, ct_pc, kn_pc, xx_pc, po_pc (numeric) – Pitch-type rates seen.
-fbv, slv, chv, cbv, sfv, ctv, knv (numeric) – Avg pitch velocities vs hitter.
-wfb, wsl, wch, wcb, wsf, wct, wkn (numeric) – Runs vs pitch types.
-wfb_c, wsl_c, wch_c, wcb_c, wsf_c, wct_c, wkn_c (numeric) – Runs/100 vs pitch types.
-
-
-35. fangraphs_pitching_lahman_like
+33. savant_pitching_traditional
 Description: Pitching Counting stats align to Lahman
 
-idfg, season, name, team – Identifiers.
-w, l, g, gs, cg, sho, sv – Wins/losses/uses.
-ip (numeric) – Innings pitched.
-h, r, er, hr – Hits/runs/ER/HR allowed.
-bb, so – Walks/strikeouts.
-hbp, wp, bk – HBP/WP/balks.
-tbf (integer) – Batters faced.
+player_id, year, last_name, first_name – Identifiers.
+p_game, p_started, p_win, p_loss, p_save, p_shutout, p_complete_game – Usage/decisions.
+p_strikeout (integer) – Strikeouts.
+p_walk (integer) – Walks.
+p_earned_run (integer) – Earned runs allowed.
+p_run (integer) – Runs allowed.
+p_hit (integer) – Hits allowed.
+p_home_run (integer) – HR allowed.
 
 
-36. fangraphs_pitching_standard_ratios
+34. savant_pitching_ratios
 Description: Common pitching ratio stats
 
-idfg, season, name, team – Identifiers.
-era (numeric) – Earned run average.
-k_9 (numeric) – Strikeouts per 9.
-bb_9 (numeric) – Walks per 9.
-k_bb (numeric) – Strikeout-to-walk ratio.
-h_9 (numeric) – Hits per 9.
-hr_9 (numeric) – HR per 9.
-avg (numeric) – Batting average against.
-whip (numeric) – (BB+H)/IP.
-babip (numeric) – BAbip allowed.
-lob_pc (numeric) – Left-on-base rate.
+player_id, year, last_name, first_name – Identifiers.
+p_era (numeric) – Earned run average.
+batting_avg (numeric) – Batting average against.
+on_base_percent (numeric) – OBP against.
+slg_percent (numeric) – SLG against.
+bb_k (numeric) – Walk-to-strikeout ratio.
 
 
-37. fangraphs_pitching_advanced
-Description: Advanced pitcher value and estimators
+35. savant_pitching_expected
+Description: Expected Damage Allowed Metrics
 
-idfg, season, name, team – Identifiers.
-war (numeric) – Wins above replacement (FG).
-fip (numeric) – Fielding Independent Pitching.
-xfip (numeric) – Expected FIP (HR regressed).
-siera (numeric) – Skill-interactive ERA.
-era_minus (integer) – ERA- (lower is better).
-fip_minus (integer) – FIP- (lower is better).
-xfip_minus (integer) – xFIP- (lower is better).
-rar (numeric) – Runs above replacement.
-dollars (numeric) – Dollar value estimate.
-ra9_war (numeric) – WAR by RA9 framework.
+player_id, year – Identifiers.
+xwoba (numeric) – Expected wOBA allowed.
+xba (numeric) – Expected BA allowed.
+xslg (numeric) – Expected SLG allowed.
+xobp (numeric) – Expected OBP allowed.
+xiso (numeric) – Expected ISO allowed.
+barrel_batted_rate (numeric) – Barrel percentage allowed.
+hard_hit_percent (numeric) – Hard hit percentage allowed.
 
 
-38. fangraphs_pitching_plate_discipline
-Description: Pitcher induced swing/contact/zone rates
+36. savant_pitching_physics
+Description: Pitching Velocity and Spin Metrics
 
-idfg, season, name, team – Identifiers.
-o_swing_pc, z_swing_pc, swing_pc – Swing rates allowed.
-o_contact_pc, z_contact_pc, contact_pc – Contact rates allowed.
-zone_pc (numeric) – Zone rate thrown.
-f_strike_pc (numeric) – First-pitch strike rate.
-swstr_pc (numeric) – Swinging-strike rate.
-cstr_pc (numeric) – Called-strike rate.
-csw_pc (numeric) – Called + swinging strike rate.
-
-
-39. fangraphs_pitching_batted_ball
-Description: Contact profile allowed by pitchers
-
-idfg, season, name, team – Identifiers.
-gb_fb (numeric) – GB/FB ratio.
-ld_pc, gb_pc, fyb_pc, iffb_pc (numeric) – line drive percentage, ground ball percentage, fly ball percentage, infield fly ball percentage
-hr_fb (numeric) – HR per fly ball.
-pull_pc, cent_pc, oppo_pc (numeric) – Spray rates allowed.
-soft_pc, med_pc, hard_pc (numeric) – Contact quality rates allowed.
-ev (numeric) – Avg exit velocity allowed.
-la (numeric) – Avg launch angle allowed.
-barrels (integer) – Barrels allowed.
-barrel_pc (numeric) – Barrel rate allowed.
-maxev (numeric) – Max EV allowed.
-hardhit (integer) – Hard-hit balls allowed.
-hardhit_pc (numeric) – Hard-hit rate allowed.
-tto_pc (numeric) – True outcomes rate allowed.
+player_id, year – Identifiers.
+exit_velocity_avg (numeric) – Exit velocity allowed (mph).
+launch_angle_avg (numeric) – Launch angle allowed (degrees).
+fastball_avg_speed (numeric) – Fastball velocity (mph).
+fastball_avg_spin (numeric) – Fastball spin rate (rpm).
+breaking_avg_spin (numeric) – Breaking ball spin rate (rpm).
+release_extension (numeric) – Release extension (feet).
 
 
-40. fangraphs_pitching_pitch_type_summary
-Description: Pitch usage/velocity and results by pitch type
+37. savant_pitching_discipline
+Description: Pitching Control and Dominance Metrics
 
-idfg, season, name, team – Identifiers.
-fb_pc, sl_pc, ct_pc, cb_pc, ch_pc, sf_pc, kn_pc (numeric) – Pitch-type usage rates.
-fbv, slv, ctv, cbv, chv, sfv, knv (numeric) – Avg velocity by pitch.
-wfb, wsl, wct, wcb, wch, wsf, wkn (numeric) – Runs by pitch type.
-wfb_c, wsl_c, wct_c, wcb_c, wch_c, wsf_c, wkn_c (numeric) – Runs/100 by pitch type.
+player_id, year – Identifiers.
+chase_percent (numeric) – Chase rate generated.
+whiff_percent (numeric) – Whiff rate generated.
+zone_percent (numeric) – Zone rate thrown.
+putaway_percent (numeric) – Putaway rate with 2 strikes.
 
 
-41. lahman_fangraphs_bridge(playerid, idfg)
-Description: ID map between Lahman and Fangraphs
+38. lahman_savant_bridge(playerid, key_mlbam)
+Description: ID map between Lahman and Savant
 
 playerid (text) – Lahman player ID.
-idfg (integer) – FanGraphs player ID.
+key_mlbam (integer) – MLBAM player ID.
 
 
 ---
