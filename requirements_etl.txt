@@ -16,3 +16,4 @@ requests
 streamlit
 undetected-chromedriver
 selenium
+curl_cffi
