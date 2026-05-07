@@ -67,7 +67,7 @@ jobs:
             --port 5432 \
             --cidr ${{ steps.ip.outputs.ipv4 }}/32
 
-      - name: 🔄 Run AWS RDS ETL update (Playwright)
+      - name: 🔄 Run AWS RDS ETL update (Savant)
         if: steps.season_check.outputs.in_season == 'true'
         env:
           AWSHOST: ${{ secrets.AWSHOST }}
@@ -76,7 +76,7 @@ jobs:
           AWSUSER: ${{ secrets.AWSUSER }}
           AWSPASSWORD: ${{ secrets.AWSPASSWORD }}
         run: |
-          python etl/update_fangraphs_playwright.py
+          python etl/update_savant_awsrds.py
 
       - name: "🧹 Cleanup: Revoke Runner IP"
         if: always() && steps.season_check.outputs.in_season == 'true'
