@@ -144,15 +144,16 @@ def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_na
     try:
         db.run("BEGIN;")
         # Pre-calculate escaped strings to avoid backslashes in f-string (Python 3.11 compatibility)
-        key_cols_escaped = ", ".join([f'"{k}"' for k in key_cols])
-        placeholders = ", ".join([f"${i+1}" for i in range(len(all_cols))])
+        # Use named placeholders (:col) which is most stable for pg8000.native 
+        # now that we've sanitized the column names.
+        placeholders = ", ".join([f":{c}" for c in all_cols])
         
         sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ({key_cols_escaped}) DO UPDATE SET {set_clause}'
         
         # Batching logic
-        records = df.to_records(index=False)
+        records = df.to_dict('records')
         for row in records:
-            db.run(sql, *row)
+            db.run(sql, **row)
         db.run("COMMIT;")
     except Exception as e:
         db.run("ROLLBACK;")
