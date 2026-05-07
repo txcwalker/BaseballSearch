@@ -131,12 +131,35 @@ def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_na
     for row in df.to_dict('records'):
         db.run(sql, **row)
 
+def update_id_bridge(db: pg8000.native.Connection):
+    print("🗺️  Updating Lahman-Savant ID Bridge...")
+    try:
+        cw = pybaseball.chadwick_register()
+        # key_mlbam is Savant ID, key_bbref is what's usually in Lahman's people table
+        bridge = cw[['key_mlbam', 'key_bbref']].dropna().drop_duplicates()
+        bridge.rename(columns={'key_bbref': 'playerid', 'key_mlbam': 'key_mlbam'}, inplace=True)
+        bridge['key_mlbam'] = bridge['key_mlbam'].astype(int)
+        
+        # Create table if not exists (playerid is text in Lahman)
+        db.run('CREATE TABLE IF NOT EXISTS "lahman_savant_bridge" ("playerid" VARCHAR(255), "key_mlbam" INT, PRIMARY KEY ("playerid", "key_mlbam"));')
+        
+        # Simple bulk upsert
+        sql = 'INSERT INTO "lahman_savant_bridge" ("playerid", "key_mlbam") VALUES (:playerid, :key_mlbam) ON CONFLICT DO NOTHING'
+        for row in bridge.to_dict('records'):
+            db.run(sql, **row)
+        print(f"✅ Bridge updated with {len(bridge)} mappings.")
+    except Exception as e:
+        print(f"⚠️ Could not update ID bridge: {e}")
+
 # ---------------- MAIN ----------------
 def main():
     print("🔌 Connecting to AWS RDS...")
     db = pg8000.native.Connection(**DB_CONFIG)
     
     try:
+        # Update the ID bridge once per run to keep joins working
+        update_id_bridge(db)
+        
         # ---- BATTING ----
         df_bat = fetch_savant_master_csv(YEAR, 'batter')
         if not df_bat.empty:
