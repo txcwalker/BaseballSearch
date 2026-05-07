@@ -70,7 +70,12 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
         df = pd.read_csv(io.StringIO(resp.text))
         
         # Clean up column names
-        df.columns = [c.lower().replace('.', '') for c in df.columns]
+        df.columns = [c.lower().replace('.', '').replace(' ', '_').replace(',', '') for c in df.columns]
+        
+        # Standardize the name column
+        if 'last_name_first_name' in df.columns:
+            df.rename(columns={'last_name_first_name': 'name'}, inplace=True)
+            
         if 'player_id' not in df.columns and 'id' in df.columns:
             df.rename(columns={'id': 'player_id'}, inplace=True)
             
@@ -138,13 +143,15 @@ def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_na
     # Optimization: Use a single transaction for the whole dataframe
     try:
         db.run("BEGIN;")
-        placeholders = ", ".join([f":{c}" for c in all_cols])
+        # Use numbered placeholders ($1, $2...) instead of named placeholders (:col) 
+        # to avoid issues with special characters or reserved words in column names.
+        placeholders = ", ".join([f"${i+1}" for i in range(len(all_cols))])
         sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ({", ".join([f"\\"{k}\\"" for k in key_cols])}) DO UPDATE SET {set_clause}'
         
         # Batching logic
-        records = df.to_dict('records')
+        records = df.to_records(index=False)
         for row in records:
-            db.run(sql, **row)
+            db.run(sql, *row)
         db.run("COMMIT;")
     except Exception as e:
         db.run("ROLLBACK;")
@@ -181,8 +188,8 @@ def main():
             
             # Map the exact Savant columns to our schema
             schema_map = {
-                "savant_batting_traditional": ['player_id','year','last_name, first_name','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout'],
-                "savant_batting_ratios": ['player_id','year','last_name, first_name','batting_avg','on_base_percent','slg_percent','on_base_plus_slg','isolated_power','b_bb_percent','b_k_percent'],
+                "savant_batting_traditional": ['player_id','year','name','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout'],
+                "savant_batting_ratios": ['player_id','year','name','batting_avg','on_base_percent','slg_percent','on_base_plus_slg','isolated_power','b_bb_percent','b_k_percent'],
                 "savant_batting_expected": ['player_id','year','xwoba','xba','xslg','xobp','xiso','wobacon_diff','sweet_spot_percent','barrel_batted_rate','hard_hit_percent'],
                 "savant_batting_physics": ['player_id','year','exit_velocity_avg','launch_angle_avg','sprint_speed','hp_to_first'],
                 "savant_batting_discipline": ['player_id','year','zone_swing_percent','zone_contact_percent','chase_percent','whiff_percent','meatball_swing_percent','meatball_percent']
@@ -205,8 +212,8 @@ def main():
             df_pit = clean_and_normalize(df_pit)
             
             schema_map = {
-                "savant_pitching_traditional": ['player_id','year','last_name, first_name','p_game','p_started','p_win','p_loss','p_save','p_shutout','p_complete_game','p_strikeout','p_walk','p_earned_run','p_run','p_hit','p_home_run'],
-                "savant_pitching_ratios": ['player_id','year','last_name, first_name','p_era','batting_avg','on_base_percent','slg_percent'],
+                "savant_pitching_traditional": ['player_id','year','name','p_game','p_started','p_win','p_loss','p_save','p_shutout','p_complete_game','p_strikeout','p_walk','p_earned_run','p_run','p_hit','p_home_run'],
+                "savant_pitching_ratios": ['player_id','year','name','p_era','batting_avg','on_base_percent','slg_percent'],
                 "savant_pitching_expected": ['player_id','year','xwoba','xba','xslg','xobp','xiso','barrel_batted_rate','hard_hit_percent'],
                 "savant_pitching_physics": ['player_id','year','exit_velocity_avg','launch_angle_avg','fastball_avg_speed','fastball_avg_spin','breaking_avg_spin','release_extension'],
                 "savant_pitching_discipline": ['player_id','year','chase_percent','whiff_percent','zone_percent','putaway_percent']
