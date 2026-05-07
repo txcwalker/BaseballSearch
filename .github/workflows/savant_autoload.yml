@@ -76,7 +76,7 @@ jobs:
           AWSUSER: ${{ secrets.AWSUSER }}
           AWSPASSWORD: ${{ secrets.AWSPASSWORD }}
         run: |
-          python etl/update_savant_awsrds.py
+          python -u etl/update_savant_awsrds.py
 
       - name: "🧹 Cleanup: Revoke Runner IP"
         if: always() && steps.season_check.outputs.in_season == 'true'

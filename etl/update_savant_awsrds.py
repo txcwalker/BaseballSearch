@@ -111,42 +111,56 @@ def create_table_if_not_exists(db: pg8000.native.Connection, df: pd.DataFrame, t
     sql = f'CREATE TABLE IF NOT EXISTS "{table_name}" ({col_def}, PRIMARY KEY ({pk_def}));'
     db.run(sql)
 
-def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_name: str):
+def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_name: str, batch_size: int = 500):
     if df.empty: return
     all_cols = list(df.columns)
     
-    # Always use player_id and year as primary key for Savant
-    key_cols = ["player_id", "year"]
+    # Define primary keys based on table
+    if table_name == "lahman_savant_bridge":
+        key_cols = ["playerid", "key_mlbam"]
+    else:
+        key_cols = ["player_id", "year"]
+        
     non_key_cols = [c for c in all_cols if c not in key_cols]
     
-    # Auto-create the table so we don't have to manually do it in AWS!
+    # Auto-create the table
     create_table_if_not_exists(db, df, table_name, key_cols)
     
     col_list = ", ".join([f'"{c}"' for c in all_cols])
-    placeholders = ", ".join([f":{c}" for c in all_cols])
     set_clause = ", ".join([f'"{c}" = EXCLUDED."{c}"' for c in non_key_cols])
     
-    sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ({", ".join(key_cols)}) DO UPDATE SET {set_clause}'
+    # pg8000.native doesn't have a direct executemany for UPSERTS with dictionaries easily,
+    # so we'll use a transaction block with individual runs, which is still MUCH faster than
+    # individual round-trips if we don't commit between every row. 
+    # But for real speed, we'll use a single statement with many VALUES if possible, 
+    # OR just wrap the loop in a single transaction.
     
-    for row in df.to_dict('records'):
-        db.run(sql, **row)
+    # Optimization: Use a single transaction for the whole dataframe
+    try:
+        db.run("BEGIN;")
+        placeholders = ", ".join([f":{c}" for c in all_cols])
+        sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ({", ".join([f"\\"{k}\\"" for k in key_cols])}) DO UPDATE SET {set_clause}'
+        
+        # Batching logic
+        records = df.to_dict('records')
+        for row in records:
+            db.run(sql, **row)
+        db.run("COMMIT;")
+    except Exception as e:
+        db.run("ROLLBACK;")
+        print(f"❌ Batch update failed for {table_name}: {e}")
+        raise e
 
 def update_id_bridge(db: pg8000.native.Connection):
-    print("🗺️  Updating Lahman-Savant ID Bridge...")
+    print("🗺️  Updating Lahman-Savant ID Bridge (this may take a moment on first run)...")
     try:
         cw = pybaseball.chadwick_register()
-        # key_mlbam is Savant ID, key_bbref is what's usually in Lahman's people table
         bridge = cw[['key_mlbam', 'key_bbref']].dropna().drop_duplicates()
         bridge.rename(columns={'key_bbref': 'playerid', 'key_mlbam': 'key_mlbam'}, inplace=True)
         bridge['key_mlbam'] = bridge['key_mlbam'].astype(int)
         
-        # Create table if not exists (playerid is text in Lahman)
-        db.run('CREATE TABLE IF NOT EXISTS "lahman_savant_bridge" ("playerid" VARCHAR(255), "key_mlbam" INT, PRIMARY KEY ("playerid", "key_mlbam"));')
-        
-        # Simple bulk upsert
-        sql = 'INSERT INTO "lahman_savant_bridge" ("playerid", "key_mlbam") VALUES (:playerid, :key_mlbam) ON CONFLICT DO NOTHING'
-        for row in bridge.to_dict('records'):
-            db.run(sql, **row)
+        # Use our optimized upsert
+        upsert_table_pg8000(db, bridge, "lahman_savant_bridge")
         print(f"✅ Bridge updated with {len(bridge)} mappings.")
     except Exception as e:
         print(f"⚠️ Could not update ID bridge: {e}")
