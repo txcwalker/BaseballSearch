@@ -143,10 +143,11 @@ def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_na
     # Optimization: Use a single transaction for the whole dataframe
     try:
         db.run("BEGIN;")
-        # Use numbered placeholders ($1, $2...) instead of named placeholders (:col) 
-        # to avoid issues with special characters or reserved words in column names.
+        # Pre-calculate escaped strings to avoid backslashes in f-string (Python 3.11 compatibility)
+        key_cols_escaped = ", ".join([f'"{k}"' for k in key_cols])
         placeholders = ", ".join([f"${i+1}" for i in range(len(all_cols))])
-        sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ({", ".join([f"\\"{k}\\"" for k in key_cols])}) DO UPDATE SET {set_clause}'
+        
+        sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ({key_cols_escaped}) DO UPDATE SET {set_clause}'
         
         # Batching logic
         records = df.to_records(index=False)
