@@ -15,7 +15,7 @@ def render_sidebar():
 
         st.markdown("""
             <div style='font-size: 0.8em; color: #555; line-height: 1.8;'>
-                <div>📊 <b>Data:</b> FanGraphs + Lahman DB</div>
+                <div>📊 <b>Data:</b> Baseball Savant + Lahman DB</div>
                 <div>🔄 <b>Updated:</b> Daily at 9 AM EST</div>
                 <div>🤖 <b>AI:</b> Google Gemini NL→SQL</div>
                 <div>☁️ <b>DB:</b> PostgreSQL on AWS RDS</div>

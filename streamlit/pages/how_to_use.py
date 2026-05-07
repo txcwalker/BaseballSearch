@@ -79,9 +79,9 @@ with st.expander("📚 Data Sources", expanded=False):
     st.markdown("""
     | Source | Contents |
     |---|---|
-    | **FanGraphs** | Advanced batting & pitching stats (WAR, wOBA, FIP, ISO, xFIP, etc.) |
+    | **Baseball Savant** | Advanced physics & expected stats (xwOBA, Exit Velo, Spin Rate, Barrels, etc.) |
     | **Lahman Database** | Historical MLB stats going back to 1871 |
-    | **Statcast** *(coming soon)* | Pitch-level and batted-ball data via `pybaseball` |
+    | **Statcast** | Pitch-level and batted-ball data via `pybaseball` |
 
     The database is updated **daily at 9 AM EST**.
     """)

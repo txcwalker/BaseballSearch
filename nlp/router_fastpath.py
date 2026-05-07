@@ -13,7 +13,7 @@ def init_fastpath(conn):
     return build_stat_catalog(conn)
 
 def _pick_template(table: str, agg: str, direction: str):
-    if table == "fangraphs_batting_lahman_like":
+    if table == "savant_batting_traditional":
         return "leaders_batting_counting" if agg == COUNTING_BATTING_AGG else "leaders_batting_rate"
     # pitching
     if direction == "ASC":
@@ -37,7 +37,7 @@ def try_fastpath(question: str, season: int, conn, stat_catalog, top_n: int = 10
     stat_label = stat_col
 
     # Qualified path only for batting (PA based)
-    if qualified and table == "fangraphs_batting_lahman_like":
+    if qualified and table == "savant_batting_traditional":
         stat_agg = f"{agg}({stat_col})::numeric"
         return render_sql(
             "leaders_batting_qualified",

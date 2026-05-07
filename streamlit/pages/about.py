@@ -48,9 +48,10 @@ with col1:
 
     **Database**
     - PostgreSQL on **AWS RDS**
+    - PostgreSQL on **AWS RDS**
     - Lahman Baseball Database (historical)
-    - FanGraphs (advanced stats)
-    - Statcast via `pybaseball` *(coming soon)*
+    - Baseball Savant (advanced physics & expected stats)
+    - Statcast via `pybaseball`
     """)
 with col2:
     st.markdown("""

@@ -10,16 +10,15 @@ LEADER_TRIG = re.compile(r"\b(league\s+leaders?|leaders?|most|top\s+\d+|who\s+ha
 YEAR_RE = re.compile(r"\b(18|19|20)\d{2}\b", re.I)
 CAREER_WORDS = re.compile(r"\b(career|all[-\s]?time|since\s+\d{4}|over\s+\d+\s+seasons|rolling|span|multi[-\s]?year)\b", re.I)
 
-# Triggers that indicate unavailable data for this database (Statcast, handedness splits, game logs, etc.)
+# Triggers that indicate unavailable data for this database (game logs, etc.)
 UNAVAILABLE_TRIG = re.compile(
-    r"\b(handedness|left[-\s]?handed|right[-\s]?handed|statcast|pitch[-\s]?by[-\s]?pitch|game\s*(log|by\s*game)|"
-    r"exit\s*velocity|launch\s*angle|swing\s*speed|spray\s*chart|catch\s*probability)\b", re.I
+    r"\b(handedness|left[-\s]?handed|right[-\s]?handed|pitch[-\s]?by[-\s]?pitch|game\s*(log|by\s*game))\b", re.I
 )
 
-# Any FanGraphs "advanced" table usage (restricted to 2002+)
+# Any Savant "advanced" table usage (restricted to 2015+)
 ADVANCED_TABLE_RE = re.compile(
-    r"\bfrom\s+fangraphs_(?:batting_advanced|pitching_advanced|plate_discipline|batted_ball|"
-    r"pitching_batted_ball|batter_pitch_type_summary|pitching_pitch_type_summary)\b",
+    r"\bfrom\s+savant_(?:batting_expected|batting_physics|batting_discipline|"
+    r"pitching_expected|pitching_physics|pitching_discipline)\b",
     re.I,
 )
 
@@ -79,14 +78,14 @@ def lint_sql(user_q: str, sql: str, current_year: int | None = None) -> LintResu
     # Current-year rule: must not use Lahman tables
     year = detect_year(q, current_year_int)
     if year == current_year_int and re.search(r"\bfrom\s+(batting|pitching|teams|people)\b", s):
-        reasons.append("Current-season query must use FanGraphs tables, not Lahman.")
+        reasons.append("Current-season query must use Savant tables, not Lahman.")
 
-    # Advanced FG tables: only allowed for 2002+
-    if year < 2002 and ADVANCED_TABLE_RE.search(s):
-        reasons.append("Advanced FanGraphs metrics are unavailable before 2002 for this database.")
+    # Advanced Savant tables: only allowed for 2015+
+    if year < 2015 and ADVANCED_TABLE_RE.search(s):
+        reasons.append("Advanced Statcast metrics are unavailable before 2015 for this database.")
 
     # quick table usage hints
     meta["uses_lahman"] = bool(re.search(r"\bfrom\s+(batting|pitching|teams|people)\b", s))
-    meta["uses_fangraphs"] = "from fangraphs_" in s
+    meta["uses_savant"] = "from savant_" in s
 
     return LintResult(ok=(len(reasons) == 0), reasons=reasons, meta=meta)

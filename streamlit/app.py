@@ -252,10 +252,10 @@ STAT_CATALOG = None
 # Example queries for chips
 EXAMPLE_QUERIES = [
     "Top Home Run hitters since 2015?",
-    "Shohei Ohtani's WAR by season",
-    "Best ERA among qualified pitchers in 2023",
-    "Compare Mike Trout and Mookie Betts in 2022",
-    "Which pitchers had the biggest FIP vs ERA gap since 2018?",
+    "Shohei Ohtani's average exit velocity by season",
+    "Best xwOBA among qualified hitters in 2023",
+    "Compare Mike Trout and Mookie Betts' hard hit rate in 2022",
+    "Which pitchers had the highest whiff percentage since 2020?",
     "Most strikeouts by a pitcher in a single season since 2010",
 ]
 
@@ -276,7 +276,7 @@ def render_home():
             <h1>⚾ Databaseball <span class='db-beta'>Beta</span></h1>
             <div class='subtitle'>Ask baseball questions in plain English. Get real stats.</div>
             <div style='font-size:0.82em; color:#8a9bb5; margin-top:0.3rem;'>
-                Powered by FanGraphs · Lahman DB · AWS RDS · Google Gemini
+                Powered by Baseball Savant · Lahman DB · AWS RDS · Google Gemini
             </div>
         </div>
     """, unsafe_allow_html=True)
