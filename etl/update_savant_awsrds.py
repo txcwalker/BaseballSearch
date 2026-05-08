@@ -77,9 +77,9 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
             # Robust column cleaning: lowercase, spaces to underscores, remove all non-alphanumeric/underscore
             df.columns = [re.sub(r'[^a-z0-9_]', '', c.lower().replace(' ', '_')) for c in df.columns]
             
-            # Standardize common names
+            # Standardize the name column to 'playername' for search tool compatibility
             if 'last_name_first_name' in df.columns:
-                df.rename(columns={'last_name_first_name': 'name'}, inplace=True)
+                df.rename(columns={'last_name_first_name': 'playername'}, inplace=True)
                 
             if 'player_id' not in df.columns and 'id' in df.columns:
                 df.rename(columns={'id': 'player_id'}, inplace=True)
@@ -226,15 +226,15 @@ def main():
                 top_hr = df_bat.sort_values('b_home_run', ascending=False).head(5)
                 print(f"📊 Verification: Top 5 HR Leaders in fetched {YEAR} Regular Season data:")
                 for _, row in top_hr.iterrows():
-                    print(f"   - {row.get('name', 'Unknown')} ({row.get('team', '???')}): {row['b_home_run']} HR (PA: {row.get('b_total_pa', 0)})")
+                    print(f"   - {row.get('playername', 'Unknown')} ({row.get('team', '???')}): {row['b_home_run']} HR (PA: {row.get('b_total_pa', 0)})")
             else:
                 print("⚠️ Warning: 'b_home_run' column not found in fetched data!")
                 print(f"   Available columns: {list(df_bat.columns)[:10]}...")
             
             # Map the exact Savant columns to our schema
             schema_map = {
-                "savant_batting_traditional": ['player_id','year','name','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout'],
-                "savant_batting_ratios": ['player_id','year','name','batting_avg','on_base_percent','slg_percent','on_base_plus_slg','isolated_power','b_bb_percent','b_k_percent'],
+                "savant_batting_traditional": ['player_id','year','playername','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout'],
+                "savant_batting_ratios": ['player_id','year','playername','batting_avg','on_base_percent','slg_percent','on_base_plus_slg','isolated_power','b_bb_percent','b_k_percent'],
                 "savant_batting_expected": ['player_id','year','xwoba','xba','xslg','xobp','xiso','wobacon_diff','sweet_spot_percent','barrel_batted_rate','hard_hit_percent'],
                 "savant_batting_physics": ['player_id','year','exit_velocity_avg','launch_angle_avg','sprint_speed','hp_to_first'],
                 "savant_batting_discipline": ['player_id','year','zone_swing_percent','zone_contact_percent','chase_percent','whiff_percent','meatball_swing_percent','meatball_percent']
@@ -257,8 +257,8 @@ def main():
             df_pit = clean_and_normalize(df_pit)
             
             schema_map = {
-                "savant_pitching_traditional": ['player_id','year','name','p_game','p_started','p_win','p_loss','p_save','p_shutout','p_complete_game','p_strikeout','p_walk','p_earned_run','p_run','p_hit','p_home_run'],
-                "savant_pitching_ratios": ['player_id','year','name','p_era','batting_avg','on_base_percent','slg_percent'],
+                "savant_pitching_traditional": ['player_id','year','playername','p_game','p_started','p_win','p_loss','p_save','p_shutout','p_complete_game','p_strikeout','p_walk','p_earned_run','p_run','p_hit','p_home_run'],
+                "savant_pitching_ratios": ['player_id','year','playername','p_era','batting_avg','on_base_percent','slg_percent'],
                 "savant_pitching_expected": ['player_id','year','xwoba','xba','xslg','xobp','xiso','barrel_batted_rate','hard_hit_percent'],
                 "savant_pitching_physics": ['player_id','year','exit_velocity_avg','launch_angle_avg','fastball_avg_speed','fastball_avg_spin','breaking_avg_spin','release_extension'],
                 "savant_pitching_discipline": ['player_id','year','chase_percent','whiff_percent','zone_percent','putaway_percent']
