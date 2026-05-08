@@ -185,14 +185,35 @@ def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_na
 
 def update_id_bridge(db: pg8000.native.Connection):
     print("🗺️  Updating Lahman-Savant ID Bridge (this may take a moment on first run)...")
+    cache_path = "chadwick_register.csv"
     try:
-        cw = pybaseball.chadwick_register()
-        bridge = cw[['key_mlbam', 'key_bbref']].dropna().drop_duplicates()
-        bridge.rename(columns={'key_bbref': 'playerid', 'key_mlbam': 'key_mlbam'}, inplace=True)
-        bridge['key_mlbam'] = bridge['key_mlbam'].astype(int)
+        df_bridge = None
+        # Use local cache if it exists and is less than 7 days old
+        if os.path.exists(cache_path):
+            file_age = time.time() - os.path.getmtime(cache_path)
+            if file_age < 86400 * 7:
+                print("📦 Using cached player lookup table.")
+                df_bridge = pd.read_csv(cache_path)
+
+        if df_bridge is None:
+            print("Gathering player lookup table from Chadwick Bureau...")
+            # Direct download with a 60s timeout to prevent hanging forever
+            url = "https://raw.githubusercontent.com/chadwickbureau/register/master/data/register.csv"
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+            with open(cache_path, 'wb') as f:
+                f.write(response.content)
+            df_bridge = pd.read_csv(cache_path)
+            print("✅ Downloaded and cached new player lookup table.")
+
+        # Process and clean
+        bridge = df_bridge[['key_mlbam', 'key_bbref', 'name_first', 'name_last']].dropna(subset=['key_mlbam', 'key_bbref'])
+        bridge.rename(columns={'key_bbref': 'playerid', 'key_mlbam': 'savant_id'}, inplace=True)
+        bridge['savant_id'] = bridge['savant_id'].astype(int)
+        bridge['playername'] = bridge['name_first'] + ' ' + bridge['name_last']
         
-        # Use our optimized upsert
-        upsert_table_pg8000(db, bridge, "lahman_savant_bridge")
+        # Sync to DB
+        upsert_table_pg8000(db, bridge[['savant_id', 'playerid', 'playername']], "lahman_savant_bridge", ['savant_id', 'playerid'])
         print(f"✅ Bridge updated with {len(bridge)} mappings.")
     except Exception as e:
         print(f"⚠️ Could not update ID bridge: {e}")
