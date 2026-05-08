@@ -80,7 +80,22 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
             # Standardize the name column to 'playername' for search tool compatibility
             if 'last_name_first_name' in df.columns:
                 df.rename(columns={'last_name_first_name': 'playername'}, inplace=True)
+            elif 'player_name' in df.columns:
+                df.rename(columns={'player_name': 'playername'}, inplace=True)
                 
+            # Fuzzy match for common columns if the 'b_' or 'p_' versions are missing or NaN
+            fuzzy_map = {
+                'b_home_run': ['home_runs', 'hr', 'homeruns', 'home_run'],
+                'b_total_pa': ['pa', 'plate_appearances', 'total_pa'],
+                'team': ['team_name', 'team_abbreviation', 'tm']
+            }
+            for target, alternatives in fuzzy_map.items():
+                if target not in df.columns or df[target].isnull().all():
+                    for alt in alternatives:
+                        if alt in df.columns and not df[alt].isnull().all():
+                            df[target] = df[alt]
+                            break
+
             if 'player_id' not in df.columns and 'id' in df.columns:
                 df.rename(columns={'id': 'player_id'}, inplace=True)
                 
@@ -242,8 +257,16 @@ def main():
         if not df_bat.empty:
             df_bat = clean_and_normalize(df_bat)
             
+            # Map the exact Savant columns to our schema
+            if 'b_home_run' not in df_bat.columns or df_bat['b_home_run'].isnull().all():
+                print(f"🕵️  Debug: Raw CSV Headers: {list(df_bat.columns)[:20]}")
+                if not df_bat.empty:
+                    print(f"🕵️  Debug: First row values: {df_bat.iloc[0].to_dict()}")
+
             # DEBUG: Print Top 5 HR leaders to verify data freshness
             if 'b_home_run' in df_bat.columns:
+                # Fill NaNs with 0 for sorting
+                df_bat['b_home_run'] = pd.to_numeric(df_bat['b_home_run'], errors='coerce').fillna(0)
                 top_hr = df_bat.sort_values('b_home_run', ascending=False).head(5)
                 print(f"📊 Verification: Top 5 HR Leaders in fetched {YEAR} Regular Season data:")
                 for _, row in top_hr.iterrows():
