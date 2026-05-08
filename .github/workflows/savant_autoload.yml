@@ -49,7 +49,10 @@ jobs:
       - name: 🌐 Get Runner Public IP
         if: steps.season_check.outputs.in_season == 'true'
         id: ip
-        run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
+        run: |
+          RUNNER_IP=$(curl -4 -s https://checkip.amazonaws.com)
+          echo "ipv4=$RUNNER_IP" >> $GITHUB_OUTPUT
+          echo "🎯 Detected Runner IP: $RUNNER_IP"
 
       - name: 🔐 Configure AWS Credentials (OIDC)
         if: steps.season_check.outputs.in_season == 'true'
@@ -61,6 +64,7 @@ jobs:
       - name: 🧱 Whitelist Runner IP in RDS SG
         if: steps.season_check.outputs.in_season == 'true'
         run: |
+          echo "🔓 Whitelisting IP ${{ steps.ip.outputs.ipv4 }} in Security Group..."
           aws ec2 authorize-security-group-ingress \
             --group-id ${{ secrets.RDS_SECURITY_GROUP_ID }} \
             --protocol tcp \

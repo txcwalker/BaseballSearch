@@ -197,7 +197,7 @@ def update_id_bridge(db: pg8000.native.Connection):
 
 # ---------------- MAIN ----------------
 def main():
-    print("🔌 Connecting to AWS RDS...")
+    print(f"🔌 Connecting to AWS RDS at {DB_CONFIG['host'][:4]}***:{DB_CONFIG['port']}...")
     db = None
     # Retry connection in case SG hasn't propagated yet
     for i in range(5):
