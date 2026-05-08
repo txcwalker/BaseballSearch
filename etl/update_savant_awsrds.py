@@ -123,6 +123,15 @@ def create_table_if_not_exists(db: pg8000.native.Connection, df: pd.DataFrame, t
     pk_def = ", ".join([f'"{k}"' for k in key_cols])
     sql = f'CREATE TABLE IF NOT EXISTS "{table_name}" ({col_def}, PRIMARY KEY ({pk_def}));'
     db.run(sql)
+    
+    # Schema Evolution: Add missing columns if table already exists
+    existing_cols = [row[0] for row in db.run(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'")]
+    for col in df.columns:
+        if col not in existing_cols:
+            print(f"➕ Adding missing column '{col}' to table '{table_name}'...")
+            # Determine type
+            col_type = "FLOAT" if df[col].dtype == 'float64' else "INT" if df[col].dtype == 'int64' else "VARCHAR(255)"
+            db.run(f'ALTER TABLE "{table_name}" ADD COLUMN "{col}" {col_type};')
 
 def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_name: str, batch_size: int = 500):
     if df.empty: return
@@ -151,12 +160,16 @@ def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_na
     # Optimization: Use a single transaction for the whole dataframe
     try:
         db.run("BEGIN;")
-        # Pre-calculate escaped strings to avoid backslashes in f-string (Python 3.11 compatibility)
         key_cols_escaped = ", ".join([f'"{k}"' for k in key_cols])
         # Use named placeholders (:col) which is most stable for pg8000.native 
         placeholders = ", ".join([f":{c}" for c in all_cols])
         
-        sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ({key_cols_escaped}) DO UPDATE SET {set_clause}'
+        if not non_key_cols:
+            # If all columns are keys, we just DO NOTHING on conflict
+            sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ({key_cols_escaped}) DO NOTHING'
+        else:
+            set_clause = ", ".join([f'"{c}" = EXCLUDED."{c}"' for c in non_key_cols])
+            sql = f'INSERT INTO "{table_name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ({key_cols_escaped}) DO UPDATE SET {set_clause}'
         
         # Batching logic
         records = df.to_dict('records')
