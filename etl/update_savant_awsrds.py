@@ -59,12 +59,14 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
     player_type: 'batter' or 'pitcher'
     """
     print(f"🕵️  Downloading {player_type.title()} Master CSV from Savant ({year})...")
+    # Add a timestamp to bypass any caching on Savant's side
+    ts = int(time.time())
     # This URL requests the custom leaderboard with ALL standard and expected stats selected
-    url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=b_total_hits,b_single,b_double,b_triple,b_home_run,b_strikeout,b_walk,b_k_percent,b_bb_percent,batting_avg,slg_percent,on_base_percent,on_base_plus_slg,isolated_power,b_rbi,b_total_bases,b_game,b_ab,b_total_pa,xba,xslg,xwoba,xobp,xiso,wobacon_diff,sweet_spot_percent,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,sprint_speed,hp_to_first,chase_percent,whiff_percent,zone_swing_percent,zone_contact_percent,meatball_swing_percent,meatball_percent&chart=false&x=b_total_hits&y=b_total_hits&r=no&chartType=scatter&csv=true"
+    url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=b_total_hits,b_single,b_double,b_triple,b_home_run,b_strikeout,b_walk,b_k_percent,b_bb_percent,batting_avg,slg_percent,on_base_percent,on_base_plus_slg,isolated_power,b_rbi,b_total_bases,b_game,b_ab,b_total_pa,xba,xslg,xwoba,xobp,xiso,wobacon_diff,sweet_spot_percent,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,sprint_speed,hp_to_first,chase_percent,whiff_percent,zone_swing_percent,zone_contact_percent,meatball_swing_percent,meatball_percent&chart=false&x=b_total_hits&y=b_total_hits&r=no&chartType=scatter&csv=true&_={ts}"
     
     # Pitcher specific URL selection (if requested)
     if player_type == 'pitcher':
-        url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=p_game,p_started,p_save,p_win,p_loss,p_shutout,p_complete_game,p_strikeout,p_walk,p_era,p_earned_run,p_run,p_hit,p_home_run,batting_avg,on_base_percent,slg_percent,on_base_plus_slg,xba,xslg,xwoba,xobp,xiso,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,chase_percent,whiff_percent,zone_percent,putaway_percent,fastball_avg_speed,fastball_avg_spin,breaking_avg_spin,release_extension&chart=false&x=p_game&y=p_game&r=no&chartType=scatter&csv=true"
+        url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=p_game,p_started,p_save,p_win,p_loss,p_shutout,p_complete_game,p_strikeout,p_walk,p_era,p_earned_run,p_run,p_hit,p_home_run,batting_avg,on_base_percent,slg_percent,on_base_plus_slg,xba,xslg,xwoba,xobp,xiso,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,chase_percent,whiff_percent,zone_percent,putaway_percent,fastball_avg_speed,fastball_avg_spin,breaking_avg_spin,release_extension&chart=false&x=p_game&y=p_game&r=no&chartType=scatter&csv=true&_={ts}"
 
     for attempt in range(3):
         try:
@@ -218,6 +220,13 @@ def main():
         df_bat = fetch_savant_master_csv(YEAR, 'batter')
         if not df_bat.empty:
             df_bat = clean_and_normalize(df_bat)
+            
+            # DEBUG: Print Top 5 HR leaders to verify data freshness
+            if 'b_home_run' in df_bat.columns:
+                top_hr = df_bat.sort_values('b_home_run', ascending=False).head(5)
+                print("📊 Verification: Top 5 HR Leaders in fetched data:")
+                for _, row in top_hr.iterrows():
+                    print(f"   - {row.get('name', 'Unknown')}: {row['b_home_run']} HR")
             
             # Map the exact Savant columns to our schema
             schema_map = {
