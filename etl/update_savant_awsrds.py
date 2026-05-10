@@ -251,15 +251,15 @@ def main():
     print(f" Connecting to AWS RDS at {DB_CONFIG['host'][:4]}***:{DB_CONFIG['port']}...")
     db = None
     # Retry connection in case SG hasn't propagated yet
-    for i in range(5):
+    for i in range(10):
         try:
             db = pg8000.native.Connection(**DB_CONFIG)
             print(" Connected to database.")
             break
         except Exception as e:
-            if i == 4: raise e
-            print(f" Waiting for connection (attempt {i+1}/5)...")
-            time.sleep(5)
+            if i == 9: raise e
+            print(f" Waiting for connection (attempt {i+1}/10)...")
+            time.sleep(10)
     
     try:
         # Update the ID bridge once per run to keep joins working

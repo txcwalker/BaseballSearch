@@ -70,6 +70,13 @@ jobs:
             --protocol tcp \
             --port 5432 \
             --cidr ${{ steps.ip.outputs.ipv4 }}/32
+          
+          echo "⏳ Waiting 15s for SG propagation..."
+          sleep 15
+          
+          echo "🔍 Verifying connectivity to port 5432..."
+          # Try to connect to the DB host to see if port is open
+          nc -zv ${{ secrets.AWSHOST }} 5432 || echo "⚠️ Warning: Port 5432 still appears closed."
 
       - name: 🔄 Run AWS RDS ETL update (Savant)
         if: steps.season_check.outputs.in_season == 'true'
