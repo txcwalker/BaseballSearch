@@ -649,3 +649,68 @@ D.R. – Dominican Republic
 
 
 Note: All `playerid` columns reference the `people` table. Composite primary keys are used where appropriate, typically across (playerid, yearid, stint) or (yearid, teamid).
+
+39. fangraphs_batting_lahman_like (fbl)
+Description: Advanced FanGraphs batting stats in a Lahman-like structure.
+idfg (integer) – FanGraphs player ID.
+season (integer) – Season year.
+name (text) – Player name.
+playername (text) – Standardized player name (use this for all queries).
+team (text) – Team abbreviation (includes 'TOT' for season totals).
+g (integer) – Games.
+pa (integer) – Plate appearances.
+ab (integer) – At-bats.
+h (integer) – Hits.
+doubles (integer) – Doubles.
+triples (integer) – Triples.
+hr (integer) – Home runs.
+rbi (integer) – Runs batted in.
+sb (integer) – Stolen bases.
+bb (integer) – Walks.
+so (real) – Strikeouts.
+
+40. fangraphs_pitching_lahman_like (fpl)
+Description: Advanced FanGraphs pitching stats in a Lahman-like structure.
+idfg (integer) – FanGraphs player ID.
+season (integer) – Season year.
+name (text) – Player name.
+playername (text) – Standardized player name (use this for all queries).
+team (text) – Team abbreviation (includes 'TOT' for season totals).
+w (integer) – Wins.
+l (integer) – Losses.
+g (integer) – Games.
+gs (integer) – Games started.
+ip (real) – Innings pitched.
+so (integer) – Strikeouts.
+
+41. fangraphs_batting_standard_ratios (fbr)
+Description: Standard FanGraphs batting ratios.
+idfg, season, name, playername, team – Identifiers.
+avg (numeric) – Batting average.
+obp (numeric) – On-base percentage.
+slg (numeric) – Slugging percentage.
+ops (numeric) – OPS.
+
+42. fangraphs_pitching_standard_ratios (fpr)
+Description: Standard FanGraphs pitching ratios.
+idfg, season, name, playername, team – Identifiers.
+era (numeric) – ERA.
+
+43. fangraphs_batting_advanced (fba)
+Description: Advanced FanGraphs batting metrics.
+idfg, season, name, playername, team – Identifiers.
+woba (numeric) – wOBA.
+wrc_plus (numeric) – wRC+.
+war (numeric) – WAR.
+
+44. fangraphs_pitching_advanced (fpa)
+Description: Advanced FanGraphs pitching metrics.
+idfg, season, name, playername, team – Identifiers.
+fip (numeric) – FIP.
+xfip (numeric) – xFIP.
+war (numeric) – WAR.
+
+45. lahman_fangraphs_bridge (lfb)
+Description: Bridge between Lahman playerid and FanGraphs idfg.
+playerid (text) – Lahman ID.
+idfg (integer) – FanGraphs ID.

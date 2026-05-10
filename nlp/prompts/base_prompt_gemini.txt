@@ -90,6 +90,15 @@ SECTION 3 — QUERY TYPE RULES
   1. Use the row where team = 'TOT' if it exists (combined season total)
   2. Otherwise SUM the individual stint rows, excluding team = '---'
   3. Never mix TOT rows and stint rows in the same aggregation
+  4. CRITICAL: Never use a column called 'has_tot_row' or 'is_tot'. It DOES NOT EXIST.
+     If you need to filter for TOT rows, use: WHERE team = 'TOT'
+     If you need to check if a TOT row exists for a player, use:
+     EXISTS (SELECT 1 FROM table t2 WHERE t2.idfg = t1.idfg AND t2.season = t1.season AND t2.team = 'TOT')
+
+── Player names ──────────────────────────────────────────────────────────────
+  - ALWAYS use the column `playername` (no underscore) for player names in ALL tables.
+  - Do NOT use `player_name` or `name` unless `playername` is missing.
+  - In FanGraphs tables (fbl, fbr, etc.), the column is `playername`.
 
 ── Player comparisons ────────────────────────────────────────────────────────
   For "compare X and Y" queries: return both players as separate rows (not columns),
@@ -122,6 +131,8 @@ SECTION 4 — SQL STYLE
   - Pre-aggregate before joining when a join could multiply rows
   - Write all season filters as literal integers — e.g. WHERE fbl.season = 2023
   - Never use variable names or placeholders in SQL — only literal values
+  - If a player was traded, prioritizing the 'TOT' row is mandatory.
+  - NEVER use the pattern "NOT has_tot_row" — this will cause a DatatypeMismatch error.
 
 ════════════════════════════════════════════════════════════
 TABLE ALIASES — use these consistently

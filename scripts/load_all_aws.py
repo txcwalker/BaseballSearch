@@ -43,6 +43,8 @@ def load_with_copy(conn, filepath):
         def infer_sql_type(value):
             if value == "" or value is None:
                 return "TEXT"
+            if str(value).lower() in ("true", "false", "t", "f"):
+                return "BOOLEAN"
             try:
                 int(value)
                 return "INTEGER"

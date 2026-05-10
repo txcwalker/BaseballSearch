@@ -31,7 +31,7 @@ YEAR = date.today().year
 
 # ---------------- Fetcher Logic ----------------
 def get_chadwick_map() -> pd.DataFrame:
-    print("🗺️  Loading Chadwick ID Map...")
+    print("  Loading Chadwick ID Map...")
     cw = chadwick_register()
     # We only need the map between MLBAM (Savant) and BBREF
     mapping = cw[['key_mlbam', 'key_bbref']].dropna()
@@ -39,7 +39,7 @@ def get_chadwick_map() -> pd.DataFrame:
     return mapping
 
 def fetch_savant_traditional(year: int, id_map: pd.DataFrame) -> pd.DataFrame:
-    print(f"⚾ Fetching Traditional Stats from Baseball Reference ({year})...")
+    print(f" Fetching Traditional Stats from Baseball Reference ({year})...")
     # Fetch B-Ref traditional stats
     df_bref = pybaseball.batting_stats_bref(year)
     
@@ -58,7 +58,7 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
     """
     player_type: 'batter' or 'pitcher'
     """
-    print(f"🕵️  Downloading {player_type.title()} Master CSV from Savant ({year})...")
+    print(f"  Downloading {player_type.title()} Master CSV from Savant ({year})...")
     # Add a timestamp to bypass any caching on Savant's side
     ts = int(time.time())
     # Force game_type=R (Regular Season) to avoid Spring Training data
@@ -77,11 +77,15 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
             # Robust column cleaning: lowercase, spaces to underscores, remove all non-alphanumeric/underscore
             df.columns = [re.sub(r'[^a-z0-9_]', '', c.lower().replace(' ', '_')) for c in df.columns]
             
-            # Standardize the name column to 'playername' for search tool compatibility
+            # Standardize the name column for search tool compatibility
             if 'last_name_first_name' in df.columns:
                 df.rename(columns={'last_name_first_name': 'playername'}, inplace=True)
             elif 'player_name' in df.columns:
                 df.rename(columns={'player_name': 'playername'}, inplace=True)
+            
+            # Ensure BOTH 'playername' and 'player_name' exist to avoid UndefinedColumn errors
+            if 'playername' in df.columns:
+                df['player_name'] = df['playername']
                 
             # Fuzzy match for common columns if the 'b_' or 'p_' versions are missing or NaN
             fuzzy_map = {
@@ -99,13 +103,13 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
             if 'player_id' not in df.columns and 'id' in df.columns:
                 df.rename(columns={'id': 'player_id'}, inplace=True)
                 
-            print(f"✅ Success! Fetched {len(df)} rows.")
+            print(f" Success! Fetched {len(df)} rows.")
             return df
         except Exception as e:
-            print(f"⚠️ Attempt {attempt+1} failed to download CSV: {e}")
+            print(f" Attempt {attempt+1} failed to download CSV: {e}")
             time.sleep(2)
             
-    print("❌ All attempts to download CSV failed.")
+    print(" All attempts to download CSV failed.")
     return pd.DataFrame()
 
 
@@ -133,8 +137,10 @@ def create_table_if_not_exists(db: pg8000.native.Connection, df: pd.DataFrame, t
             cols.append(f'"{col}" INT')
         elif df[col].dtype == 'float64': 
             cols.append(f'"{col}" FLOAT')
+        elif df[col].dtype == 'bool':
+            cols.append(f'"{col}" BOOLEAN')
         else: 
-            cols.append(f'"{col}" VARCHAR(255)')
+            cols.append(f'"{col}" TEXT')
     
     col_def = ", ".join(cols)
     pk_def = ", ".join([f'"{k}"' for k in key_cols])
@@ -145,9 +151,16 @@ def create_table_if_not_exists(db: pg8000.native.Connection, df: pd.DataFrame, t
     existing_cols = [row[0] for row in db.run(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'")]
     for col in df.columns:
         if col not in existing_cols:
-            print(f"➕ Adding missing column '{col}' to table '{table_name}'...")
+            print(f" Adding missing column '{col}' to table '{table_name}'...")
             # Determine type
-            col_type = "FLOAT" if df[col].dtype == 'float64' else "INT" if df[col].dtype == 'int64' else "VARCHAR(255)"
+            if df[col].dtype == 'float64':
+                col_type = "FLOAT"
+            elif df[col].dtype == 'int64':
+                col_type = "INT"
+            elif df[col].dtype == 'bool':
+                col_type = "BOOLEAN"
+            else:
+                col_type = "TEXT"
             db.run(f'ALTER TABLE "{table_name}" ADD COLUMN "{col}" {col_type};')
 
 def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_name: str, batch_size: int = 500):
@@ -195,11 +208,11 @@ def upsert_table_pg8000(db: pg8000.native.Connection, df: pd.DataFrame, table_na
         db.run("COMMIT;")
     except Exception as e:
         db.run("ROLLBACK;")
-        print(f"❌ Batch update failed for {table_name}: {e}")
+        print(f" Batch update failed for {table_name}: {e}")
         raise e
 
 def update_id_bridge(db: pg8000.native.Connection):
-    print("🗺️  Updating Lahman-Savant ID Bridge (this may take a moment on first run)...")
+    print("  Updating Lahman-Savant ID Bridge (this may take a moment on first run)...")
     cache_path = "chadwick_register.csv"
     try:
         df_bridge = None
@@ -207,7 +220,7 @@ def update_id_bridge(db: pg8000.native.Connection):
         if os.path.exists(cache_path):
             file_age = time.time() - os.path.getmtime(cache_path)
             if file_age < 86400 * 7:
-                print("📦 Using cached player lookup table.")
+                print(" Using cached player lookup table.")
                 df_bridge = pd.read_csv(cache_path)
 
         if df_bridge is None:
@@ -219,7 +232,7 @@ def update_id_bridge(db: pg8000.native.Connection):
             with open(cache_path, 'wb') as f:
                 f.write(response.content)
             df_bridge = pd.read_csv(cache_path)
-            print("✅ Downloaded and cached new player lookup table.")
+            print(" Downloaded and cached new player lookup table.")
 
         # Process and clean
         bridge = df_bridge[['key_mlbam', 'key_bbref', 'name_first', 'name_last']].dropna(subset=['key_mlbam', 'key_bbref'])
@@ -229,23 +242,23 @@ def update_id_bridge(db: pg8000.native.Connection):
         
         # Sync to DB
         upsert_table_pg8000(db, bridge[['savant_id', 'playerid', 'playername']], "lahman_savant_bridge", ['savant_id', 'playerid'])
-        print(f"✅ Bridge updated with {len(bridge)} mappings.")
+        print(f" Bridge updated with {len(bridge)} mappings.")
     except Exception as e:
-        print(f"⚠️ Could not update ID bridge: {e}")
+        print(f" Could not update ID bridge: {e}")
 
 # ---------------- MAIN ----------------
 def main():
-    print(f"🔌 Connecting to AWS RDS at {DB_CONFIG['host'][:4]}***:{DB_CONFIG['port']}...")
+    print(f" Connecting to AWS RDS at {DB_CONFIG['host'][:4]}***:{DB_CONFIG['port']}...")
     db = None
     # Retry connection in case SG hasn't propagated yet
     for i in range(5):
         try:
             db = pg8000.native.Connection(**DB_CONFIG)
-            print("✅ Connected to database.")
+            print(" Connected to database.")
             break
         except Exception as e:
             if i == 4: raise e
-            print(f"⏳ Waiting for connection (attempt {i+1}/5)...")
+            print(f" Waiting for connection (attempt {i+1}/5)...")
             time.sleep(5)
     
     try:
@@ -259,29 +272,29 @@ def main():
             
             # Map the exact Savant columns to our schema
             if 'b_home_run' not in df_bat.columns or df_bat['b_home_run'].isnull().all():
-                print(f"🕵️  Debug: Raw CSV Headers: {list(df_bat.columns)[:20]}")
+                print(f"  Debug: Raw CSV Headers: {list(df_bat.columns)[:20]}")
                 if not df_bat.empty:
-                    print(f"🕵️  Debug: First row values: {df_bat.iloc[0].to_dict()}")
+                    print(f"  Debug: First row values: {df_bat.iloc[0].to_dict()}")
 
             # DEBUG: Print Top 5 HR leaders to verify data freshness
             if 'b_home_run' in df_bat.columns:
                 # Fill NaNs with 0 for sorting
                 df_bat['b_home_run'] = pd.to_numeric(df_bat['b_home_run'], errors='coerce').fillna(0)
                 top_hr = df_bat.sort_values('b_home_run', ascending=False).head(5)
-                print(f"📊 Verification: Top 5 HR Leaders in fetched {YEAR} Regular Season data:")
+                print(f" Verification: Top 5 HR Leaders in fetched {YEAR} Regular Season data:")
                 for _, row in top_hr.iterrows():
                     print(f"   - {row.get('playername', 'Unknown')} ({row.get('team', '???')}): {row['b_home_run']} HR (PA: {row.get('b_total_pa', 0)})")
             else:
-                print("⚠️ Warning: 'b_home_run' column not found in fetched data!")
+                print(" Warning: 'b_home_run' column not found in fetched data!")
                 print(f"   Available columns: {list(df_bat.columns)[:10]}...")
             
             # Map the exact Savant columns to our schema
             schema_map = {
-                "savant_batting_traditional": ['player_id','year','playername','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout'],
-                "savant_batting_ratios": ['player_id','year','playername','batting_avg','on_base_percent','slg_percent','on_base_plus_slg','isolated_power','b_bb_percent','b_k_percent'],
-                "savant_batting_expected": ['player_id','year','xwoba','xba','xslg','xobp','xiso','wobacon_diff','sweet_spot_percent','barrel_batted_rate','hard_hit_percent'],
-                "savant_batting_physics": ['player_id','year','exit_velocity_avg','launch_angle_avg','sprint_speed','hp_to_first'],
-                "savant_batting_discipline": ['player_id','year','zone_swing_percent','zone_contact_percent','chase_percent','whiff_percent','meatball_swing_percent','meatball_percent']
+                "savant_batting_traditional": ['player_id','year','playername','player_name','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout'],
+                "savant_batting_ratios": ['player_id','year','playername','player_name','batting_avg','on_base_percent','slg_percent','on_base_plus_slg','isolated_power','b_bb_percent','b_k_percent'],
+                "savant_batting_expected": ['player_id','year','playername','player_name','xwoba','xba','xslg','xobp','xiso','wobacon_diff','sweet_spot_percent','barrel_batted_rate','hard_hit_percent'],
+                "savant_batting_physics": ['player_id','year','playername','player_name','exit_velocity_avg','launch_angle_avg','sprint_speed','hp_to_first'],
+                "savant_batting_discipline": ['player_id','year','playername','player_name','zone_swing_percent','zone_contact_percent','chase_percent','whiff_percent','meatball_swing_percent','meatball_percent']
             }
             
             # Calculate BB/K
@@ -292,7 +305,7 @@ def main():
             for table, cols in schema_map.items():
                 valid = [col for col in cols if col in df_bat.columns]
                 if len(valid) >= 3:
-                    print(f"📁 Updating {table}...")
+                    print(f" Updating {table}...")
                     upsert_table_pg8000(db, df_bat[valid], table)
                     
         # ---- PITCHING ----
@@ -301,11 +314,11 @@ def main():
             df_pit = clean_and_normalize(df_pit)
             
             schema_map = {
-                "savant_pitching_traditional": ['player_id','year','playername','p_game','p_started','p_win','p_loss','p_save','p_shutout','p_complete_game','p_strikeout','p_walk','p_earned_run','p_run','p_hit','p_home_run'],
-                "savant_pitching_ratios": ['player_id','year','playername','p_era','batting_avg','on_base_percent','slg_percent'],
-                "savant_pitching_expected": ['player_id','year','xwoba','xba','xslg','xobp','xiso','barrel_batted_rate','hard_hit_percent'],
-                "savant_pitching_physics": ['player_id','year','exit_velocity_avg','launch_angle_avg','fastball_avg_speed','fastball_avg_spin','breaking_avg_spin','release_extension'],
-                "savant_pitching_discipline": ['player_id','year','chase_percent','whiff_percent','zone_percent','putaway_percent']
+                "savant_pitching_traditional": ['player_id','year','playername','player_name','p_game','p_started','p_win','p_loss','p_save','p_shutout','p_complete_game','p_strikeout','p_walk','p_earned_run','p_run','p_hit','p_home_run'],
+                "savant_pitching_ratios": ['player_id','year','playername','player_name','p_era','batting_avg','on_base_percent','slg_percent'],
+                "savant_pitching_expected": ['player_id','year','playername','player_name','xwoba','xba','xslg','xobp','xiso','barrel_batted_rate','hard_hit_percent'],
+                "savant_pitching_physics": ['player_id','year','playername','player_name','exit_velocity_avg','launch_angle_avg','fastball_avg_speed','fastball_avg_spin','breaking_avg_spin','release_extension'],
+                "savant_pitching_discipline": ['player_id','year','playername','player_name','chase_percent','whiff_percent','zone_percent','putaway_percent']
             }
             
             if 'p_walk' in df_pit.columns and 'p_strikeout' in df_pit.columns:
@@ -315,10 +328,10 @@ def main():
             for table, cols in schema_map.items():
                 valid = [col for col in cols if col in df_pit.columns]
                 if len(valid) >= 3:
-                    print(f"📁 Updating {table}...")
+                    print(f" Updating {table}...")
                     upsert_table_pg8000(db, df_pit[valid], table)
                     
-        print("✅ Finished.")
+        print(" Finished.")
     finally:
         db.close()
 
