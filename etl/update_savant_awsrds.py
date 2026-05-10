@@ -62,11 +62,11 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
     # Add a timestamp to bypass any caching on Savant's side
     ts = int(time.time())
     # Force game_type=R (Regular Season) to avoid Spring Training data
-    url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=b_total_hits,b_single,b_double,b_triple,b_home_run,b_strikeout,b_walk,b_k_percent,b_bb_percent,batting_avg,slg_percent,on_base_percent,on_base_plus_slg,isolated_power,b_rbi,b_total_bases,b_game,b_ab,b_total_pa,xba,xslg,xwoba,xobp,xiso,wobacon_diff,sweet_spot_percent,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,sprint_speed,hp_to_first,chase_percent,whiff_percent,zone_swing_percent,zone_contact_percent,meatball_swing_percent,meatball_percent&chart=false&x=b_total_hits&y=b_total_hits&r=no&chartType=scatter&game_type=R&csv=true&_={ts}"
+    url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=hit,single,double,triple,home_run,strikeout,walk,b_k_percent,b_bb_percent,batting_avg,slg_percent,on_base_percent,on_base_plus_slg,isolated_power,b_rbi,b_total_bases,b_game,ab,pa,xba,xslg,xwoba,xobp,xiso,wobacon_diff,sweet_spot_percent,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,sprint_speed,hp_to_first,chase_percent,whiff_percent,zone_swing_percent,zone_contact_percent,meatball_swing_percent,meatball_percent&chart=false&x=hit&y=hit&r=no&chartType=scatter&game_type=R&csv=true&_={ts}"
     
     # Pitcher specific URL selection (if requested)
     if player_type == 'pitcher':
-        url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=p_game,p_started,p_save,p_win,p_loss,p_shutout,p_complete_game,p_strikeout,p_walk,p_era,p_earned_run,p_run,p_hit,p_home_run,batting_avg,on_base_percent,slg_percent,on_base_plus_slg,xba,xslg,xwoba,xobp,xiso,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,chase_percent,whiff_percent,zone_percent,putaway_percent,fastball_avg_speed,fastball_avg_spin,breaking_avg_spin,release_extension&chart=false&x=p_game&y=p_game&r=no&chartType=scatter&game_type=R&csv=true&_={ts}"
+        url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=p_game,p_started,p_save,p_win,p_loss,p_shutout,p_complete_game,p_strikeout,p_walk,p_era,p_earned_run,p_run,hit,p_home_run,batting_avg,on_base_percent,slg_percent,on_base_plus_slg,xba,xslg,xwoba,xobp,xiso,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,chase_percent,whiff_percent,zone_percent,putaway_percent,fastball_avg_speed,fastball_avg_spin,breaking_avg_spin,release_extension&chart=false&x=p_game&y=p_game&r=no&chartType=scatter&game_type=R&csv=true&_={ts}"
 
     for attempt in range(3):
         try:
@@ -89,8 +89,16 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
                 
             # Fuzzy match for common columns if the 'b_' or 'p_' versions are missing or NaN
             fuzzy_map = {
-                'b_home_run': ['home_runs', 'hr', 'homeruns', 'home_run'],
+                'b_total_hits': ['hit', 'h', 'hits'],
+                'b_single': ['single', '1b'],
+                'b_double': ['double', '2b'],
+                'b_triple': ['triple', '3b'],
+                'b_home_run': ['home_run', 'hr', 'homeruns'],
+                'b_strikeout': ['strikeout', 'so', 'k'],
+                'b_walk': ['walk', 'bb'],
+                'b_ab': ['ab', 'at_bats'],
                 'b_total_pa': ['pa', 'plate_appearances', 'total_pa'],
+                'p_hit': ['hit', 'h', 'hits'],
                 'team': ['team_name', 'team_abbreviation', 'tm']
             }
             for target, alternatives in fuzzy_map.items():
@@ -224,24 +232,20 @@ def update_id_bridge(db: pg8000.native.Connection):
                 df_bridge = pd.read_csv(cache_path)
 
         if df_bridge is None:
-            print("Gathering player lookup table from Chadwick Bureau...")
-            # Direct download with a 60s timeout to prevent hanging forever
-            url = "https://raw.githubusercontent.com/chadwickbureau/register/master/data/register.csv"
-            response = requests.get(url, timeout=60)
-            response.raise_for_status()
-            with open(cache_path, 'wb') as f:
-                f.write(response.content)
-            df_bridge = pd.read_csv(cache_path)
+            print("Gathering player lookup table via pybaseball...")
+            # Use pybaseball's native register which handles split files automatically
+            df_bridge = chadwick_register()
+            df_bridge.to_csv(cache_path, index=False)
             print(" Downloaded and cached new player lookup table.")
 
         # Process and clean
         bridge = df_bridge[['key_mlbam', 'key_bbref', 'name_first', 'name_last']].dropna(subset=['key_mlbam', 'key_bbref'])
-        bridge.rename(columns={'key_bbref': 'playerid', 'key_mlbam': 'savant_id'}, inplace=True)
-        bridge['savant_id'] = bridge['savant_id'].astype(int)
+        bridge.rename(columns={'key_bbref': 'playerid'}, inplace=True)
+        bridge['key_mlbam'] = bridge['key_mlbam'].astype(int)
         bridge['playername'] = bridge['name_first'] + ' ' + bridge['name_last']
         
         # Sync to DB
-        upsert_table_pg8000(db, bridge[['savant_id', 'playerid', 'playername']], "lahman_savant_bridge", ['savant_id', 'playerid'])
+        upsert_table_pg8000(db, bridge[['key_mlbam', 'playerid', 'playername']], "lahman_savant_bridge")
         print(f" Bridge updated with {len(bridge)} mappings.")
     except Exception as e:
         print(f" Could not update ID bridge: {e}")
