@@ -1,5 +1,7 @@
 Your PostgreSQL database contains the following tables:
 
+IMPORTANT: For current-season or recent data (2025 and 2026), always prioritize the 'savant_*' tables (28-37) as they are updated daily. Use 'fangraphs_*' tables only for historical advanced metrics or when 'savant' equivalents are missing.
+
 1. people
 Description: Biographical information for each player
 

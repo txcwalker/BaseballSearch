@@ -50,7 +50,8 @@ jobs:
         if: steps.season_check.outputs.in_season == 'true'
         id: ip
         run: |
-          RUNNER_IP=$(curl -4 -s https://checkip.amazonaws.com)
+          # Try multiple services to get the external IPv4
+          RUNNER_IP=$(curl -4 -s https://checkip.amazonaws.com || curl -4 -s https://ifconfig.me || curl -4 -s https://api.ipify.org)
           echo "ipv4=$RUNNER_IP" >> $GITHUB_OUTPUT
           echo "🎯 Detected Runner IP: $RUNNER_IP"
 
@@ -64,19 +65,35 @@ jobs:
       - name: 🧱 Whitelist Runner IP in RDS SG
         if: steps.season_check.outputs.in_season == 'true'
         run: |
-          echo "🔓 Whitelisting IP ${{ steps.ip.outputs.ipv4 }} in Security Group..."
+          IP="${{ steps.ip.outputs.ipv4 }}"
+          SG_ID="${{ secrets.RDS_SECURITY_GROUP_ID }}"
+          echo "🔓 Whitelisting IP $IP in Security Group $SG_ID..."
+          
+          # Attempt to authorize, ignore if already exists
           aws ec2 authorize-security-group-ingress \
-            --group-id ${{ secrets.RDS_SECURITY_GROUP_ID }} \
+            --group-id "$SG_ID" \
             --protocol tcp \
             --port 5432 \
-            --cidr ${{ steps.ip.outputs.ipv4 }}/32
+            --cidr "$IP/32" || echo "ℹ️ Note: Rule might already exist or authorization failed."
           
-          echo "⏳ Waiting 15s for SG propagation..."
-          sleep 15
+          echo "📝 Current ingress rules for SG $SG_ID (port 5432):"
+          aws ec2 describe-security-groups --group-ids "$SG_ID" --query "SecurityGroups[0].IpPermissions[?ToPort==\`5432\`].IpRanges" --output table
           
-          echo "🔍 Verifying connectivity to port 5432..."
-          # Try to connect to the DB host to see if port is open
-          nc -zv ${{ secrets.AWSHOST }} 5432 || echo "⚠️ Warning: Port 5432 still appears closed."
+          echo "⏳ Waiting for SG propagation and port readiness..."
+          for i in {1..6}; do
+            echo "🔍 Connectivity check $i/6..."
+            if nc -zv -w 5 ${{ secrets.AWSHOST }} 5432; then
+              echo "✅ Port 5432 is OPEN."
+              break
+            else
+              echo "⏳ Still waiting... (10s)"
+              sleep 10
+            fi
+            if [ $i -eq 6 ]; then
+              echo "❌ ERROR: Port 5432 never opened after 60s."
+              # We don't exit 1 here to let the Python script try its own retries, but we logged the failure.
+            fi
+          done
 
       - name: 🔄 Run AWS RDS ETL update (Savant)
         if: steps.season_check.outputs.in_season == 'true'

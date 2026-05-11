@@ -257,7 +257,7 @@ def main():
     # Retry connection in case SG hasn't propagated yet
     for i in range(10):
         try:
-            db = pg8000.native.Connection(**DB_CONFIG)
+            db = pg8000.native.Connection(**DB_CONFIG, timeout=30)
             print(" Connected to database.")
             break
         except Exception as e:
@@ -294,7 +294,7 @@ def main():
             
             # Map the exact Savant columns to our schema
             schema_map = {
-                "savant_batting_traditional": ['player_id','year','playername','player_name','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout'],
+                "savant_batting_traditional": ['player_id','year','playername','player_name','team','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout'],
                 "savant_batting_ratios": ['player_id','year','playername','player_name','batting_avg','on_base_percent','slg_percent','on_base_plus_slg','isolated_power','b_bb_percent','b_k_percent'],
                 "savant_batting_expected": ['player_id','year','playername','player_name','xwoba','xba','xslg','xobp','xiso','wobacon_diff','sweet_spot_percent','barrel_batted_rate','hard_hit_percent'],
                 "savant_batting_physics": ['player_id','year','playername','player_name','exit_velocity_avg','launch_angle_avg','sprint_speed','hp_to_first'],
@@ -318,7 +318,7 @@ def main():
             df_pit = clean_and_normalize(df_pit)
             
             schema_map = {
-                "savant_pitching_traditional": ['player_id','year','playername','player_name','p_game','p_started','p_win','p_loss','p_save','p_shutout','p_complete_game','p_strikeout','p_walk','p_earned_run','p_run','p_hit','p_home_run'],
+                "savant_pitching_traditional": ['player_id','year','playername','player_name','team','p_game','p_started','p_win','p_loss','p_save','p_shutout','p_complete_game','p_strikeout','p_walk','p_earned_run','p_run','p_hit','p_home_run'],
                 "savant_pitching_ratios": ['player_id','year','playername','player_name','p_era','batting_avg','on_base_percent','slg_percent'],
                 "savant_pitching_expected": ['player_id','year','playername','player_name','xwoba','xba','xslg','xobp','xiso','barrel_batted_rate','hard_hit_percent'],
                 "savant_pitching_physics": ['player_id','year','playername','player_name','exit_velocity_avg','launch_angle_avg','fastball_avg_speed','fastball_avg_spin','breaking_avg_spin','release_extension'],
