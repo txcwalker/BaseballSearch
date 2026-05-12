@@ -18,10 +18,9 @@ leaders_batting_counting:
              pa,
              g
       FROM (
-        -- For 2025+, use Savant (updated daily) + Roster Bridge for Teams
-        SELECT s.player_id AS id, s.year AS season, COALESCE(r.team, s.team) AS team, s.playername AS name, s.{{ stat_col_savant }} AS stat, s.b_total_pa AS pa, s.b_game AS g
+        -- For 2025+, use Savant (updated daily)
+        SELECT s.player_id AS id, s.year AS season, s.team AS team, s.playername AS name, s.{{ stat_col_savant }} AS stat, s.b_total_pa AS pa, s.b_game AS g
         FROM savant_batting_traditional s
-        LEFT JOIN savant_rosters_2026 r ON r.player_id = s.player_id AND r.year = s.year
         WHERE s.year >= 2025 AND s.year = %(season)s
         
         UNION ALL
@@ -66,10 +65,9 @@ leaders_pitching_counting:
              qual,
              g
       FROM (
-        -- For 2025+, use Savant (updated daily) + Roster Bridge
-        SELECT s.player_id AS id, s.year AS season, COALESCE(r.team, s.team) AS team, s.playername AS name, s.{{ stat_col_savant }} AS stat, s.p_game AS qual, s.p_game AS g
+        -- For 2025+, use Savant (updated daily)
+        SELECT s.player_id AS id, s.year AS season, s.team AS team, s.playername AS name, s.{{ stat_col_savant }} AS stat, s.p_game AS qual, s.p_game AS g
         FROM savant_pitching_traditional s
-        LEFT JOIN savant_rosters_2026 r ON r.player_id = s.player_id AND r.year = s.year
         WHERE s.year >= 2025 AND s.year = %(season)s
         
         UNION ALL

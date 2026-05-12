@@ -7,9 +7,10 @@ from jinja2 import Environment, StrictUndefined
 STAT_MAP = {
     r"(?i)^(hr|home\s*runs?)$": {"fg": "hr", "savant": "b_home_run"},
     r"(?i)^(rbi|runs?\s*batted\s*in)$": {"fg": "rbi", "savant": "b_rbi"},
-    r"(?i)^(sb|stolen\s*bases?)$": {"fg": "sb", "savant": "sb"},
+    r"(?i)^(sb|stolen\s*bases?)$": {"fg": "sb", "savant": "b_stolen_base"},
     r"(?i)^(so|strikeouts?)$": {"fg": "so", "savant": "b_strikeout"},
     r"(?i)^(bb|walks?)$": {"fg": "bb", "savant": "b_walk"},
+    r"(?i)^(h|hits?)$": {"fg": "h", "savant": "b_total_hits"},
 }
 
 def nl_to_cols(label: str) -> Dict[str, str]:
@@ -207,13 +208,7 @@ DIRECT_PATTERNS = [
 # ------- Existing stat-based template patterns -------
 TEMPLATE_PATTERNS = [
     ("leaders_batting_counting",
-     re.compile(r"(?i)\b(?:leaders?|top\s*(?P<top_n>\d+))\s+in\s+(?P<stat_label>hr|home\s*runs?)\s+(?:in|for)\s+(?P<season>\d{4})")),
-    ("leaders_batting_counting",
-     re.compile(r"(?i)\bwho\s+(?:leads?|are\s+the\s+leaders?)\b.*\b(?P<stat_label>hr|home\s*runs?)\b.*\b(?P<season>\d{4})")),
-    ("leaders_batting_counting",
-     re.compile(r"(?i)\bmost\s+(?P<stat_label>hr|home\s*runs?)\s+(?:in|for)\s+(?P<season>\d{4})")),
-    ("leaders_batting_counting",
-     re.compile(r"(?i)\btop\s*(?P<top_n>\d+)\b.*\b(?P<stat_label>hr|home\s*runs?)\b.*\b(?P<season>\d{4})")),
+     re.compile(r"(?i)\b(?:leads?|leaders?|top\s*(?P<top_n>\d+)|most)\b.*\b(?P<stat_label>hr|home\s*runs?|rbi|runs\s*batted\s*in|sb|stolen\s*bases?|so|strikeouts?|bb|walks?|h|hits?)\b.*\b(?:(?P<season>\d{4})|this\s+year|this\s+season)")),
 ]
 
 
@@ -266,8 +261,9 @@ def build_sql_from_templates(
         return sql, params, "direct"
 
     # Stat-based YAML template
-    tdef = templates_yaml["templates"][name]
-    season = int(gd.get("season")) if gd.get("season") else None
+    tdef = templates_yaml.get("templates", templates_yaml)[name]
+    from datetime import date
+    season = int(gd.get("season")) if gd.get("season") else date.today().year
     top_n = int(gd.get("top_n") or tdef.get("defaults", {}).get("top_n", 10))
     stat_label_nl = (gd.get("stat_label") or tdef.get("defaults", {}).get("stat_label", "stat")).lower()
     
