@@ -175,24 +175,35 @@ leaders_batting_qualified:
   sql: |
     WITH tg AS (
       SELECT MAX(g) AS max_games
-      FROM fangraphs_batting_lahman_like
+      FROM (
+        SELECT b_game AS g, year AS season FROM savant_batting_traditional WHERE year >= 2025
+        UNION ALL
+        SELECT g, season FROM fangraphs_batting_lahman_like WHERE season < 2025
+      ) all_g
       WHERE season = %(season)s
     ),
     base AS (
-      SELECT DISTINCT ON (fbl.idfg, fbl.season, TRIM(fbl.team))
-             fbl.idfg,
-             fbl.season,
-             TRIM(fbl.team) AS team,
-             fbl.name,
-             fbl.pa,
-             fbl.g
-      FROM fangraphs_batting_lahman_like fbl
-      WHERE season = %(season)s
-      ORDER BY fbl.idfg, fbl.season, TRIM(fbl.team), fbl.pa DESC, fbl.g DESC
+      SELECT DISTINCT ON (id, season, team)
+             id,
+             season,
+             team,
+             name,
+             pa,
+             g
+      FROM (
+        SELECT player_id AS id, year AS season, team AS team, playername AS name, b_total_pa AS pa, b_game AS g
+        FROM savant_batting_traditional
+        WHERE year >= 2025 AND year = %(season)s
+        UNION ALL
+        SELECT idfg AS id, season, TRIM(team) AS team, name, pa, g
+        FROM fangraphs_batting_lahman_like
+        WHERE season < 2025 AND season = %(season)s
+      ) all_stats
+      ORDER BY id, season, team, pa DESC, g DESC
     ),
     player AS (
       SELECT
-        idfg,
+        id,
         MAX(name) AS name,
         COALESCE(
           MAX(pa) FILTER (WHERE team = 'TOT'),
@@ -200,7 +211,7 @@ leaders_batting_qualified:
         ) AS pa_total,
         {{ stat_agg }} AS "{{ stat_label }}"
       FROM base
-      GROUP BY idfg
+      GROUP BY id
     ),
     qualified AS (
       SELECT p.*
