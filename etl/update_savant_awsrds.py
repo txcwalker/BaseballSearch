@@ -280,6 +280,14 @@ def update_id_bridge(db: pg8000.native.Connection):
 # ---------------- MAIN ----------------
 def main():
     print(f" Connecting to AWS RDS at {DB_CONFIG['host'][:4]}***:{DB_CONFIG['port']}...")
+    import socket
+    try:
+        # Force IPv4 resolution. GitHub Actions sometimes prefers IPv6, which we didn't whitelist.
+        ipv4_host = socket.gethostbyname(DB_CONFIG['host'])
+        DB_CONFIG['host'] = ipv4_host
+    except Exception as e:
+        print(f" Warning: Could not resolve IPv4 for host: {e}")
+
     db = None
     # Retry connection in case SG hasn't propagated yet
     for i in range(10):

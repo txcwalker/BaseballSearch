@@ -69,12 +69,20 @@ jobs:
           SG_ID="${{ secrets.RDS_SECURITY_GROUP_ID }}"
           echo "🔓 Whitelisting IP $IP in Security Group $SG_ID..."
           
-          # Attempt to authorize, ignore if already exists
+          # Attempt to authorize, capture error to distinguish between Duplicate and Quota limits
           aws ec2 authorize-security-group-ingress \
             --group-id "$SG_ID" \
             --protocol tcp \
             --port 5432 \
-            --cidr "$IP/32" || echo "ℹ️ Note: Rule might already exist or authorization failed."
+            --cidr "$IP/32" 2> sg_err.txt || {
+              if grep -q "InvalidPermission.Duplicate" sg_err.txt; then
+                echo "ℹ️ Note: Rule already exists."
+              else
+                cat sg_err.txt
+                echo "❌ CRITICAL: Failed to authorize IP! The Security Group might have reached its 60-rule limit due to previous failed cleanups."
+                exit 1
+              fi
+            }
           
           echo "📝 Current ingress rules for SG $SG_ID (port 5432):"
           aws ec2 describe-security-groups --group-ids "$SG_ID" --query "SecurityGroups[0].IpPermissions[?ToPort==\`5432\`].IpRanges" --output table
