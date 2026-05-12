@@ -30,6 +30,28 @@ DB_CONFIG = {
 YEAR = date.today().year
 
 # ---------------- Fetcher Logic ----------------
+def get_mlb_rosters(year: int) -> dict:
+    import requests
+    print(f"  Fetching active team rosters from MLB API ({year})...")
+    mapping = {}
+    try:
+        # First get teams
+        teams_url = f"http://statsapi.mlb.com/api/v1/teams?sportId=1&season={year}"
+        teams_data = requests.get(teams_url, timeout=10).json()
+        teams = {t['id']: t['abbreviation'] for t in teams_data.get('teams', [])}
+        
+        # Then get players
+        players_url = f"http://statsapi.mlb.com/api/v1/sports/1/players?season={year}"
+        players_data = requests.get(players_url, timeout=10).json()
+        for p in players_data.get('people', []):
+            if 'currentTeam' in p and 'id' in p['currentTeam']:
+                team_id = p['currentTeam']['id']
+                if team_id in teams:
+                    mapping[p['id']] = teams[team_id]
+        print(f"  Mapped {len(mapping)} players to teams.")
+    except Exception as e:
+        print(f"  Warning: failed to fetch rosters: {e}")
+    return mapping
 def get_chadwick_map() -> pd.DataFrame:
     print("  Loading Chadwick ID Map...")
     cw = chadwick_register()
@@ -62,11 +84,12 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
     # Add a timestamp to bypass any caching on Savant's side
     ts = int(time.time())
     # Force game_type=R (Regular Season) to avoid Spring Training data
-    url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=hit,single,double,triple,home_run,strikeout,walk,b_k_percent,b_bb_percent,batting_avg,slg_percent,on_base_percent,on_base_plus_slg,isolated_power,b_rbi,b_total_bases,b_game,ab,pa,xba,xslg,xwoba,xobp,xiso,wobacon_diff,sweet_spot_percent,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,sprint_speed,hp_to_first,chase_percent,whiff_percent,zone_swing_percent,zone_contact_percent,meatball_swing_percent,meatball_percent&chart=false&x=hit&y=hit&r=no&chartType=scatter&game_type=R&csv=true&_={ts}"
+    if player_type == 'batter':
+        selections = "hit,single,double,triple,home_run,strikeout,walk,b_k_percent,b_bb_percent,batting_avg,slg_percent,on_base_percent,on_base_plus_slg,isolated_power,b_rbi,b_total_bases,b_game,ab,pa,xba,xslg,xwoba,xobp,xiso,wobacon_diff,sweet_spot_percent,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,sprint_speed,hp_to_first,chase_percent,whiff_percent,zone_swing_percent,zone_contact_percent,meatball_swing_percent,meatball_percent,team,b_stolen_base"
+    else:
+        selections = "p_game,p_started,p_save,p_win,p_loss,p_shutout,p_complete_game,p_strikeout,p_walk,p_era,p_earned_run,p_run,hit,p_home_run,batting_avg,on_base_percent,slg_percent,on_base_plus_slg,xba,xslg,xwoba,xobp,xiso,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,chase_percent,whiff_percent,zone_percent,putaway_percent,fastball_avg_speed,fastball_avg_spin,breaking_avg_spin,release_extension,team,b_stolen_base"
     
-    # Pitcher specific URL selection (if requested)
-    if player_type == 'pitcher':
-        url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections=p_game,p_started,p_save,p_win,p_loss,p_shutout,p_complete_game,p_strikeout,p_walk,p_era,p_earned_run,p_run,hit,p_home_run,batting_avg,on_base_percent,slg_percent,on_base_plus_slg,xba,xslg,xwoba,xobp,xiso,barrel_batted_rate,hard_hit_percent,exit_velocity_avg,launch_angle_avg,chase_percent,whiff_percent,zone_percent,putaway_percent,fastball_avg_speed,fastball_avg_spin,breaking_avg_spin,release_extension&chart=false&x=p_game&y=p_game&r=no&chartType=scatter&game_type=R&csv=true&_={ts}"
+    url = f"https://baseballsavant.mlb.com/leaderboard/custom?year={year}&type={player_type}&filter=&sort=4&sortDir=desc&min=0&selections={selections}&chart=false&x=hit&y=hit&r=no&chartType=scatter&game_type=R&csv=true&_={ts}"
 
     for attempt in range(3):
         try:
@@ -97,7 +120,8 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
                 'b_strikeout': ['strikeout', 'so', 'k'],
                 'b_walk': ['walk', 'bb'],
                 'b_ab': ['ab', 'at_bats'],
-                'b_total_pa': ['pa', 'plate_appearances', 'total_pa'],
+                'b_total_pa': ['b_total_pa', 'pa'],
+                'b_stolen_base': ['b_stolen_base', 'sb'],
                 'p_hit': ['hit', 'h', 'hits'],
                 'team': ['team_name', 'team_abbreviation', 'tm']
             }
@@ -112,6 +136,9 @@ def fetch_savant_master_csv(year: int, player_type: str) -> pd.DataFrame:
                 df.rename(columns={'id': 'player_id'}, inplace=True)
                 
             print(f" Success! Fetched {len(df)} rows.")
+            print(f" Debug: CSV Columns: {df.columns.tolist()}")
+            if not df.empty:
+                print(f" Debug: First row team: {df.iloc[0].get('team')}")
             return df
         except Exception as e:
             print(f" Attempt {attempt+1} failed to download CSV: {e}")
@@ -267,13 +294,22 @@ def main():
     
     try:
         # Update the ID bridge once per run to keep joins working
-        update_id_bridge(db)
+        # update_id_bridge(db)
+        
+        # Fetch Live Rosters for accurate teams
+        player_team_map = get_mlb_rosters(YEAR)
         
         # ---- BATTING ----
         df_bat = fetch_savant_master_csv(YEAR, 'batter')
         if not df_bat.empty:
             df_bat = clean_and_normalize(df_bat)
             
+            # Apply accurate team map
+            if player_team_map:
+                if 'team' not in df_bat.columns:
+                    df_bat['team'] = None
+                df_bat['team'] = df_bat['player_id'].map(player_team_map).fillna(df_bat['team']).fillna('FA')
+
             # Map the exact Savant columns to our schema
             if 'b_home_run' not in df_bat.columns or df_bat['b_home_run'].isnull().all():
                 print(f"  Debug: Raw CSV Headers: {list(df_bat.columns)[:20]}")
@@ -294,7 +330,7 @@ def main():
             
             # Map the exact Savant columns to our schema
             schema_map = {
-                "savant_batting_traditional": ['player_id','year','playername','player_name','team','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout'],
+                "savant_batting_traditional": ['player_id','year','playername','player_name','team','b_game','b_ab','b_total_pa','b_total_hits','b_single','b_double','b_triple','b_home_run','b_rbi','b_walk','b_strikeout','b_stolen_base'],
                 "savant_batting_ratios": ['player_id','year','playername','player_name','batting_avg','on_base_percent','slg_percent','on_base_plus_slg','isolated_power','b_bb_percent','b_k_percent'],
                 "savant_batting_expected": ['player_id','year','playername','player_name','xwoba','xba','xslg','xobp','xiso','wobacon_diff','sweet_spot_percent','barrel_batted_rate','hard_hit_percent'],
                 "savant_batting_physics": ['player_id','year','playername','player_name','exit_velocity_avg','launch_angle_avg','sprint_speed','hp_to_first'],
@@ -316,6 +352,12 @@ def main():
         df_pit = fetch_savant_master_csv(YEAR, 'pitcher')
         if not df_pit.empty:
             df_pit = clean_and_normalize(df_pit)
+            
+            # Apply accurate team map
+            if player_team_map:
+                if 'team' not in df_pit.columns:
+                    df_pit['team'] = None
+                df_pit['team'] = df_pit['player_id'].map(player_team_map).fillna(df_pit['team']).fillna('FA')
             
             schema_map = {
                 "savant_pitching_traditional": ['player_id','year','playername','player_name','team','p_game','p_started','p_win','p_loss','p_save','p_shutout','p_complete_game','p_strikeout','p_walk','p_earned_run','p_run','p_hit','p_home_run'],

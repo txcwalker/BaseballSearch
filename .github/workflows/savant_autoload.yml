@@ -1,4 +1,4 @@
-name: Daily AWS RDS FanGraphs Update
+name: Daily AWS RDS Savant Update
 
 on:
   schedule:

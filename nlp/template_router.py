@@ -5,18 +5,18 @@ from jinja2 import Environment, StrictUndefined
 
 # ------- Natural language → whitelisted stat columns -------
 STAT_MAP = {
-    r"(?i)^(hr|home\s*runs?)$": "hr",
-    r"(?i)^(rbi|runs?\s*batted\s*in)$": "rbi",
-    r"(?i)^(sb|stolen\s*bases?)$": "sb",
-    r"(?i)^(so|strikeouts?)$": "so",
-    r"(?i)^(bb|walks?)$": "bb",
+    r"(?i)^(hr|home\s*runs?)$": {"fg": "hr", "savant": "b_home_run"},
+    r"(?i)^(rbi|runs?\s*batted\s*in)$": {"fg": "rbi", "savant": "b_rbi"},
+    r"(?i)^(sb|stolen\s*bases?)$": {"fg": "sb", "savant": "sb"},
+    r"(?i)^(so|strikeouts?)$": {"fg": "so", "savant": "b_strikeout"},
+    r"(?i)^(bb|walks?)$": {"fg": "bb", "savant": "b_walk"},
 }
 
-def nl_to_col(label: str) -> str:
-    for pat, col in STAT_MAP.items():
+def nl_to_cols(label: str) -> Dict[str, str]:
+    for pat, cols in STAT_MAP.items():
         if re.fullmatch(pat, (label or "").strip()):
-            return col
-    raise ValueError(f"Unrecognized stat label: {label!r}")
+            return cols
+    return {"fg": label, "savant": label} # Fallback
 
 
 # -----------------------------------------------------------------------
@@ -270,13 +270,16 @@ def build_sql_from_templates(
     season = int(gd.get("season")) if gd.get("season") else None
     top_n = int(gd.get("top_n") or tdef.get("defaults", {}).get("top_n", 10))
     stat_label_nl = (gd.get("stat_label") or tdef.get("defaults", {}).get("stat_label", "stat")).lower()
-    stat_col = (
-        nl_to_col(stat_label_nl)
-        if "stat_col" in tdef.get("params", [])
-        else tdef.get("defaults", {}).get("stat_col")
-    )
+    
+    # Get mapped columns for both sources
+    cols = nl_to_cols(stat_label_nl)
+    
+    stat_col_savant = cols["savant"]
+    stat_col_fg = cols["fg"]
+
     ident_params = {
-        "stat_col": stat_col,
+        "stat_col_savant": stat_col_savant,
+        "stat_col_fg": stat_col_fg,
         "stat_label": stat_label_nl,
         "fragments": templates_yaml.get("fragments", {}),
     }

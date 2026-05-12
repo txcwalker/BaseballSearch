@@ -4,33 +4,45 @@ leaders_batting_counting:
     - "(?i)(?:leaders?|top\\s*(?P<top_n>\\d+))\\s+in\\s+(?P<stat_label>hr|home runs?)\\s+(?:in|for)\\s+(?P<season>\\d{4})"
     - "(?i)who\\s+(?:leads?|are\\s+the\\s+leaders?).*\\b(?P<stat_label>hr|home\\s*runs?)\\b.*\\b(?P<season>\\d{4})"
     - "(?i)most\\s+(?P<stat_label>hr|home\\s*runs?)\\s+(?:in|for)\\s+(?P<season>\\d{4})"
-  params: ["season", "top_n", "stat_col", "stat_label"]
-  defaults: { top_n: 10, stat_col: "hr" }
+  params: ["season", "top_n", "stat_col_savant", "stat_col_fg", "stat_label"]
+  defaults: { top_n: 10, stat_col_savant: "b_home_run", stat_col_fg: "hr" }
   param_types: { season: int, top_n: int }
   sql: |
     WITH base AS (
-      SELECT DISTINCT ON (fbl.idfg, fbl.season, TRIM(fbl.team))
-             fbl.idfg,
-             fbl.season,
-             TRIM(fbl.team) AS team,
-             fbl.name,
-             {{ stat_col }} AS stat,
-             fbl.pa,
-             fbl.g
-      FROM fangraphs_batting_lahman_like fbl
-      WHERE season = %(season)s
-      ORDER BY fbl.idfg, fbl.season, TRIM(fbl.team), fbl.pa DESC, fbl.g DESC, {{ stat_col }} DESC
+      SELECT DISTINCT ON (id, season, team)
+             id,
+             season,
+             team,
+             name,
+             stat,
+             pa,
+             g
+      FROM (
+        -- For 2025+, use Savant (updated daily) + Roster Bridge for Teams
+        SELECT s.player_id AS id, s.year AS season, COALESCE(r.team, s.team) AS team, s.playername AS name, s.{{ stat_col_savant }} AS stat, s.b_total_pa AS pa, s.b_game AS g
+        FROM savant_batting_traditional s
+        LEFT JOIN savant_rosters_2026 r ON r.player_id = s.player_id AND r.year = s.year
+        WHERE s.year >= 2025 AND s.year = %(season)s
+        
+        UNION ALL
+        
+        -- For historical, use FanGraphs
+        SELECT idfg AS id, season, TRIM(team) AS team, name, {{ stat_col_fg }} AS stat, pa, g
+        FROM fangraphs_batting_lahman_like
+        WHERE season < 2025 AND season = %(season)s
+      ) all_stats
+      ORDER BY id, season, team, pa DESC, g DESC, stat DESC
     ),
     player AS (
       SELECT
-        idfg,
+        id,
         MAX(name) AS name,
         COALESCE(
           MAX(stat) FILTER (WHERE team = 'TOT'),
           SUM(stat) FILTER (WHERE team NOT IN ('TOT','---'))
         )::numeric AS "{{ stat_label }}"
       FROM base
-      GROUP BY idfg
+      GROUP BY id
     )
     SELECT name, "{{ stat_label }}"
     FROM player
@@ -40,33 +52,45 @@ leaders_batting_counting:
 
 leaders_pitching_counting:
   description: "Top N leaders for a counting pitching stat with ties (traded-safe)"
-  params: ["season", "top_n", "stat_col", "stat_label"]
-  defaults: { top_n: 10 }
+  params: ["season", "top_n", "stat_col_savant", "stat_col_fg", "stat_label"]
+  defaults: { top_n: 10, stat_col_savant: "p_strikeout", stat_col_fg: "so" }
   param_types: { season: int, top_n: int }
   sql: |
     WITH base AS (
-      SELECT DISTINCT ON (fpl.idfg, fpl.season, TRIM(fpl.team))
-             fpl.idfg,
-             fpl.season,
-             TRIM(fpl.team) AS team,
-             fpl.name,
-             {{ stat_col }} AS stat,
-             fpl.ip,
-             fpl.g
-      FROM fangraphs_pitching_lahman_like fpl
-      WHERE season = %(season)s
-      ORDER BY fpl.idfg, fpl.season, TRIM(fpl.team), fpl.ip DESC, fpl.g DESC, {{ stat_col }} DESC
+      SELECT DISTINCT ON (id, season, team)
+             id,
+             season,
+             team,
+             name,
+             stat,
+             qual,
+             g
+      FROM (
+        -- For 2025+, use Savant (updated daily) + Roster Bridge
+        SELECT s.player_id AS id, s.year AS season, COALESCE(r.team, s.team) AS team, s.playername AS name, s.{{ stat_col_savant }} AS stat, s.p_game AS qual, s.p_game AS g
+        FROM savant_pitching_traditional s
+        LEFT JOIN savant_rosters_2026 r ON r.player_id = s.player_id AND r.year = s.year
+        WHERE s.year >= 2025 AND s.year = %(season)s
+        
+        UNION ALL
+        
+        -- For historical, use FanGraphs
+        SELECT idfg AS id, season, TRIM(team) AS team, name, {{ stat_col_fg }} AS stat, ip AS qual, g
+        FROM fangraphs_pitching_lahman_like fpl
+        WHERE season < 2025 AND season = %(season)s
+      ) all_stats
+      ORDER BY id, season, team, qual DESC, g DESC, stat DESC
     ),
     pitcher AS (
       SELECT
-        idfg,
+        id,
         MAX(name) AS name,
         COALESCE(
           MAX(stat) FILTER (WHERE team = 'TOT'),
           SUM(stat) FILTER (WHERE team NOT IN ('TOT','---'))
         )::numeric AS "{{ stat_label }}"
       FROM base
-      GROUP BY idfg
+      GROUP BY id
     )
     SELECT name, "{{ stat_label }}"
     FROM pitcher
