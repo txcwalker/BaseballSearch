@@ -62,6 +62,30 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
+      - name: 🔍 AWS RDS & Security Group Diagnosis
+        if: steps.season_check.outputs.in_season == 'true'
+        run: |
+          echo "===================================================="
+          echo "📡 STEP 1: Querying RDS Instances in us-east-1..."
+          echo "===================================================="
+          aws rds describe-db-instances \
+            --query "DBInstances[*].{Identifier:DBInstanceIdentifier,Status:DBInstanceStatus,Endpoint:Endpoint.Address,SecurityGroups:VpcSecurityGroups[*].VpcSecurityGroupId}" \
+            --output json
+
+          echo "===================================================="
+          echo "🔑 STEP 2: Checking Configured Secret SG ID..."
+          echo "===================================================="
+          SECRET_SG="${{ secrets.RDS_SECURITY_GROUP_ID }}"
+          echo "Configured Secret SG ID: $SECRET_SG"
+
+          echo "===================================================="
+          echo "🛡️ STEP 3: Describing Configured SG Rules..."
+          echo "===================================================="
+          aws ec2 describe-security-groups \
+            --group-ids "$SECRET_SG" \
+            --query "SecurityGroups[*].{GroupId:GroupId,GroupName:GroupName,IpPermissions:IpPermissions[*].{FromPort:FromPort,ToPort:ToPort,IpRanges:IpRanges[*].CidrIp}}" \
+            --output json
+
       - name: 🧱 Temporarily Open RDS SG for ETL
         if: steps.season_check.outputs.in_season == 'true'
         run: |
