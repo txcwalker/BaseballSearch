@@ -1,0 +1,29 @@
+question,category
+"Who led the league in home runs in 2025?",leaderboard_counting
+"Most strikeouts by a pitcher in 2019",leaderboard_counting
+"Top 5 in RBI in 2026",leaderboard_counting
+"Who has the most home runs this season?",leaderboard_current_season
+"Which teams had the best ERA in 2022?",team_stats
+"Compare batting averages of AL East teams in 2021",team_stats
+"How did the Yankees do in 2022?",team_stats
+"Shohei Ohtani's WAR by season",player_career
+"Clayton Kershaw's ERA and FIP by season",player_career
+"Compare Mike Trout and Mookie Betts' home runs in 2022",player_comparison
+"Compare Clayton Kershaw and Gerrit Cole ERA in 2023",player_comparison
+"Best batting average among qualified hitters in 2025",qualified_rate_leaderboard
+"Which pitcher has the best ERA among qualified pitchers in 2026?",qualified_rate_leaderboard
+"What is Aaron Judge's batting average this season?",player_current_season
+"Show me Kyle Schwarber's stats this season",player_current_season
+"How many home runs did Bobby Witt Jr have in 2024?",player_single_season
+"Top 10 home run leaders since 2015",career_window
+"Who has the highest WAR in 2020?",leaderboard_rate
+"What was the AL Central batting average leader in 2019?",team_stats
+"What was Babe Ruth's home run total in 1927?",historical_pre_2002
+"Who had the most stolen bases in 2026?",leaderboard_current_season
+"Which team had the most wins in 2023?",team_stats
+"What's the capital of France?",off_topic_refusal
+"What was Aaron Judge's exit velocity on May 5th 2023?",unavailable_data_refusal
+"Which players had the most hits in 2025?",leaderboard_counting
+"What was Mike Trout's WAR in 2016?",advanced_metric_historical
+"Most home runs in 2005",leaderboard_lahman_fallback
+"Who led the league in RBI in 2024?",leaderboard_lahman_fallback

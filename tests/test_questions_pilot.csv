@@ -1,0 +1,32 @@
+question,category,test_focus
+What was Mike Trout's exit velocity in 2016?,advanced_metric_historical,"Reused, swapped from WAR (FanGraphs) to exit velocity; also exercises the Statcast backfill"
+Was Mike Trout an All-Star in 2019?,allstar,Boolean-style All-Star roster membership lookup
+How good was the Big Unit?,ambiguous_input,"Nickname resolution (Randy Johnson), no explicit stat or season"
+What was the Los Angeles Dodgers' home attendance in 2019?,attendance_salary,Team attendance lookup via homegames
+Who won NL MVP in 2011?,awards_voting,Basic award-winner lookup
+What was Willie Mays' exit velocity in 1965?,boundary_limit,Pre-Statcast refusal; metric didn't exist before 2015
+Shohei Ohtani's home runs and OPS by season,career_window,"Multi-season trend, replaces a WAR-based question to avoid FanGraphs"
+How many errors did Derek Jeter make in 2005?,fielding,Basic fielding counting stat lookup
+When was Derek Jeter inducted into the Hall of Fame?,hall_of_fame,Basic HOF induction lookup
+What was Babe Ruth's home run total in 1927?,historical_pre_2002,Reused from original test_questions.csv
+Who led the league in home runs in 2025?,leaderboard_counting,Fast-path counting leaderboard; 2025 forces Lahman fallback since Savant only has 2026
+Who has the most stolen bases this season?,leaderboard_current_season,Fast-path with dynamic 'this season' resolution instead of a literal year
+Most home runs in 2005,leaderboard_lahman_fallback,Reused from original test_questions.csv
+Who has the highest OBP in 2020?,leaderboard_rate,"Reused, swapped from WAR (FanGraphs) to OBP"
+How many games did Joe Torre win as manager of the Yankees?,managers,Manager counting stat aggregate lookup
+"Show the top 5 vote getters in the MVP rankings from 2009 and their OBP, HR, RBI and Runs",multi_table_pairing,MVP voting joined with generic batting stats (original example question)
+What's the capital of France?,off_topic_refusal,"Non-baseball question, must return the fixed refusal string"
+Aaron Judge's home runs by season,player_career,Direct template pattern: batting career-by-season handler
+Compare Mike Trout and Mookie Betts' home runs in 2022,player_comparison,"Counting-stat comparison, no qualification thresholds should apply"
+What is Aaron Judge's batting average this season?,player_current_season,Guards against career-pattern overmatch on a bare current-season question
+How many home runs did Hank Aaron hit in 1971?,player_single_season,"Basic single-season counting stat lookup, historical"
+Who won the 2017 World Series?,postseason,Basic postseason series outcome lookup
+Best batting average among qualified hitters in 2019,qualified_rate_leaderboard,"Lahman-sourced qualified rate leaderboard, historical season"
+Best xwOBA among qualified hitters in 2018,qualified_statcast_leaderboard,Qualification threshold must fall back to Lahman PA counts (yesterday's fix)
+How did Aaron Judge do against left-handed pitchers in 2024?,refusal_unavailable,Handedness splits are explicitly unavailable data
+Who leads the league in home runs this season?,savant_current,"Current-season fast-path leaderboard, dynamic year resolution"
+What was Mike Trout's average exit velocity in 2019?,savant_statcast_historical,Statcast-exclusive metric for a backfilled historical season
+What was the Cincinnati Reds' record in the first half of the 1981 strike season?,split_season,managershalf/teamshalf split-season quirk
+Which teams had the best ERA in 2022?,team_stats,Team-level rate stat leaderboard
+What were Juan Soto's home runs in 2022?,traded_player,"Mid-season trade (WSN->SD, Aug 2022); sums across stints"
+What was Aaron Judge's exit velocity on May 5th 2023?,unavailable_data_refusal,Reused from original test_questions.csv

@@ -29,7 +29,7 @@ with st.expander("✅ What You Can Ask", expanded=True):
     | Player seasons | *"What were Shohei Ohtani's counting stats in 2023?"* |
     | Leaderboards | *"Top 10 pitchers by strikeouts since 2010"* |
     | Comparisons | *"Compare Mike Trout and Mookie Betts in 2023"* |
-    | Advanced stats | *"Which pitchers had the biggest FIP vs ERA gap since 2018?"* |
+    | Statcast metrics (any season) | *"Best xwOBA among qualified hitters in 2023"* |
     | Team stats | *"Show me the Yankees' team ERA by year since 2015"* |
     | Career totals | *"Show Aaron Judge's HR totals by season"* |
     """)
@@ -91,7 +91,6 @@ with st.expander("📋 More Example Queries to Try", expanded=False):
     st.markdown("""
     Copy any of these into the search box on the home page:
 
-    - *"What were the top 5 WAR seasons for position players since 2000?"*
     - *"Which teams had the best bullpen ERA in 2022?"*
     - *"List the top 10 OPS seasons since 2015 among qualified hitters"*
     - *"How many strikeouts did Gerrit Cole have in each season since 2018?"*
