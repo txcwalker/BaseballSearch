@@ -99,7 +99,7 @@ def build_prompt(nl_query, schema_str, prompt_template, season, current_year=CUR
 
 # Use gemini-2.5-flash
 _GEMINI_MODEL = "gemini-2.5-flash"
-_GEMINI_TIMEOUT = 45  # seconds — fail fast rather than hang for 45+s
+_GEMINI_TIMEOUT = 60  # seconds — fail fast rather than hang indefinitely
 
 def load_gemini_key() -> str:
     if "GEMINI_API_KEY" in os.environ:
@@ -125,7 +125,7 @@ def get_sql_from_gemini(prompt: str) -> str:
         try:
             resp = model.generate_content(
                 contents=[{"role": "user", "parts": [prompt]}],
-                generation_config={"temperature": 0.1, "max_output_tokens": 8192},
+                generation_config={"temperature": 0.1, "max_output_tokens": 16384},
             )
             result[0] = (resp.text or "").strip()
         except Exception as e:
@@ -174,11 +174,10 @@ def handle_model_response(response_text: Optional[str], season: int) -> Optional
             return "__REPROMPT__"
         return text
 
-    looks_sql = (
-        "select " in lo
-        or lo.startswith("with ")
-        or lo.startswith("explain ")
-    )
+    # Gemini commonly pretty-prints SQL as "SELECT\n  col,\n  ..." — match on a
+    # SELECT/WITH/EXPLAIN keyword followed by any whitespace (space OR newline),
+    # not just a literal space, and anywhere a statement could start.
+    looks_sql = bool(re.match(r"^\s*(select|with|explain)\s", lo))
     if not looks_sql:
         return "I wasn't able to generate a valid query for that question."
 

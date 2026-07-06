@@ -64,11 +64,20 @@ def lint_sql(user_q: str, sql: str, current_year: int | None = None) -> LintResu
 
     # Single-season leaders: enforce constraints
     if is_single_season_leaderboard(q):
-        if "filter(" in s:
-            reasons.append("Single-season leaderboard must not use FILTER().")
-        # any sign of computing TOT and non-TOT together in one step
-        if ("team = 'tot'" in s or "team='tot'" in s) and (
-            "team not in ('tot','---')" in s or "team not in('tot','---')" in s
+        # FILTER() is fine when it's the recognized traded-player (TOT) safeguard
+        # idiom — e.g. MAX(stat) FILTER (WHERE team = 'TOT'). Only flag other uses.
+        filter_clauses = re.findall(r"filter\s*\(\s*where\s+([^)]*)\)", s, re.I)
+        bad_filters = [c for c in filter_clauses if "team" not in c or "tot" not in c]
+        if bad_filters:
+            reasons.append("Single-season leaderboard uses FILTER() for something other than TOT traded-player handling.")
+        # Combining TOT and non-TOT via FILTER()-scoped aggregation (e.g.
+        # COALESCE(MAX(stat) FILTER (WHERE team='TOT'), SUM(stat) FILTER (WHERE team NOT IN (...))))
+        # is the correct traded-player-safe idiom used throughout this project — only flag
+        # a mix that happens OUTSIDE any FILTER() clause (e.g. directly in a WHERE clause),
+        # since that combination is never sensible there.
+        s_no_filters = re.sub(r"filter\s*\([^)]*\)", "", s, flags=re.I)
+        if ("team = 'tot'" in s_no_filters or "team='tot'" in s_no_filters) and (
+            "team not in ('tot','---')" in s_no_filters or "team not in('tot','---')" in s_no_filters
         ):
             reasons.append("Do not compute TOT and non-TOT in the same SELECT/CTE for single-season leaders.")
         # counting stat: no PA/IP qualifiers

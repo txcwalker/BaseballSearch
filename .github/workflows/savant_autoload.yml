@@ -2,7 +2,7 @@ name: Daily AWS RDS Savant Update
 
 on:
   schedule:
-    - cron: '0 12 * * *'  # Daily at 12 PM UTC (7 AM CST)
+    - cron: '30 14 * * *'  # Daily at 2:30 PM UTC (9:30 AM EST / 10:30 AM EDT)
   workflow_dispatch:
 
 jobs:
@@ -107,7 +107,7 @@ jobs:
             }
           
           echo "⏳ Waiting for SG propagation..."
-          for i in {1..4}; do
+          for i in {1..6}; do
             echo "🔍 Connectivity check $i/6..."
             if nc -zv -w 5 ${{ secrets.AWSHOST }} 5432; then
               echo "✅ Port 5432 is OPEN."

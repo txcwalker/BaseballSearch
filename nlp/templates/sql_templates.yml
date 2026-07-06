@@ -1,11 +1,11 @@
 leaders_batting_counting:
-  description: "Top N leaders for a counting batting stat with ties (traded-safe)"
+  description: "Top N leaders for a counting batting stat with ties (Savant current season, Lahman historical fallback)"
   patterns:
     - "(?i)(?:leaders?|top\\s*(?P<top_n>\\d+))\\s+in\\s+(?P<stat_label>hr|home runs?)\\s+(?:in|for)\\s+(?P<season>\\d{4})"
     - "(?i)who\\s+(?:leads?|are\\s+the\\s+leaders?).*\\b(?P<stat_label>hr|home\\s*runs?)\\b.*\\b(?P<season>\\d{4})"
     - "(?i)most\\s+(?P<stat_label>hr|home\\s*runs?)\\s+(?:in|for)\\s+(?P<season>\\d{4})"
-  params: ["season", "top_n", "stat_col_savant", "stat_col_fg", "stat_label"]
-  defaults: { top_n: 10, stat_col_savant: "b_home_run", stat_col_fg: "hr" }
+  params: ["season", "top_n", "stat_col_savant", "stat_col_lahman", "stat_label"]
+  defaults: { top_n: 10, stat_col_savant: "b_home_run", stat_col_lahman: "hr" }
   param_types: { season: int, top_n: int }
   sql: |
     WITH base AS (
@@ -18,17 +18,28 @@ leaders_batting_counting:
              pa,
              g
       FROM (
-        -- For 2025+, use Savant (updated daily)
-        SELECT s.player_id AS id, s.year AS season, s.team AS team, s.playername AS name, s.{{ stat_col_savant }} AS stat, s.b_total_pa AS pa, s.b_game AS g
+        -- Use Savant if it has rows for the requested season (the current, in-progress season)
+        SELECT s.player_id::text AS id, s.year AS season, s.team AS team,
+               CASE WHEN position(', ' in s.playername) > 0
+                    THEN split_part(s.playername, ', ', 2) || ' ' || split_part(s.playername, ', ', 1)
+                    ELSE s.playername END AS name,
+               s.{{ stat_col_savant }} AS stat, s.b_total_pa AS pa, s.b_game AS g
         FROM savant_batting_traditional s
-        WHERE s.year >= 2025 AND s.year = %(season)s
-        
+        WHERE s.year = %(season)s
+
         UNION ALL
-        
-        -- For historical, use FanGraphs
-        SELECT idfg AS id, season, TRIM(team) AS team, name, {{ stat_col_fg }} AS stat, pa, g
-        FROM fangraphs_batting_lahman_like
-        WHERE season < 2025 AND season = %(season)s
+
+        -- Otherwise fall back to Lahman (any season Savant doesn't have). Lahman
+        -- has no 'TOT' row -- pre-sum multi-stint rows per team before they reach
+        -- the traded-player logic below (which expects one row per team already).
+        SELECT bat.playerid AS id, bat.yearid AS season, bat.teamid AS team,
+               peo.namefirst || ' ' || peo.namelast AS name,
+               SUM(bat.{{ stat_col_lahman }}) AS stat, SUM(bat.ab) AS pa, SUM(bat.g) AS g
+        FROM batting bat
+        JOIN people peo ON peo.playerid = bat.playerid
+        WHERE bat.yearid = %(season)s
+          AND NOT EXISTS (SELECT 1 FROM savant_batting_traditional s2 WHERE s2.year = %(season)s)
+        GROUP BY bat.playerid, bat.yearid, bat.teamid, peo.namefirst, peo.namelast
       ) all_stats
       ORDER BY id, season, team, pa DESC, g DESC, stat DESC
     ),
@@ -50,9 +61,9 @@ leaders_batting_counting:
 
 
 leaders_pitching_counting:
-  description: "Top N leaders for a counting pitching stat with ties (traded-safe)"
-  params: ["season", "top_n", "stat_col_savant", "stat_col_fg", "stat_label"]
-  defaults: { top_n: 10, stat_col_savant: "p_strikeout", stat_col_fg: "so" }
+  description: "Top N leaders for a counting pitching stat with ties (Savant current season, Lahman historical fallback)"
+  params: ["season", "top_n", "stat_col_savant", "stat_col_lahman", "stat_label"]
+  defaults: { top_n: 10, stat_col_savant: "p_strikeout", stat_col_lahman: "so" }
   param_types: { season: int, top_n: int }
   sql: |
     WITH base AS (
@@ -65,17 +76,28 @@ leaders_pitching_counting:
              qual,
              g
       FROM (
-        -- For 2025+, use Savant (updated daily)
-        SELECT s.player_id AS id, s.year AS season, s.team AS team, s.playername AS name, s.{{ stat_col_savant }} AS stat, s.p_game AS qual, s.p_game AS g
+        -- Use Savant if it has rows for the requested season (the current, in-progress season)
+        SELECT s.player_id::text AS id, s.year AS season, s.team AS team,
+               CASE WHEN position(', ' in s.playername) > 0
+                    THEN split_part(s.playername, ', ', 2) || ' ' || split_part(s.playername, ', ', 1)
+                    ELSE s.playername END AS name,
+               s.{{ stat_col_savant }} AS stat, s.p_game AS qual, s.p_game AS g
         FROM savant_pitching_traditional s
-        WHERE s.year >= 2025 AND s.year = %(season)s
-        
+        WHERE s.year = %(season)s
+
         UNION ALL
-        
-        -- For historical, use FanGraphs
-        SELECT idfg AS id, season, TRIM(team) AS team, name, {{ stat_col_fg }} AS stat, ip AS qual, g
-        FROM fangraphs_pitching_lahman_like fpl
-        WHERE season < 2025 AND season = %(season)s
+
+        -- Otherwise fall back to Lahman (any season Savant doesn't have). Lahman
+        -- has no 'TOT' row -- pre-sum multi-stint rows per team before they reach
+        -- the traded-player logic below (which expects one row per team already).
+        SELECT pit.playerid AS id, pit.yearid AS season, pit.teamid AS team,
+               peo.namefirst || ' ' || peo.namelast AS name,
+               SUM(pit.{{ stat_col_lahman }}) AS stat, SUM(pit.ipouts) AS qual, SUM(pit.g) AS g
+        FROM pitching pit
+        JOIN people peo ON peo.playerid = pit.playerid
+        WHERE pit.yearid = %(season)s
+          AND NOT EXISTS (SELECT 1 FROM savant_pitching_traditional s2 WHERE s2.year = %(season)s)
+        GROUP BY pit.playerid, pit.yearid, pit.teamid, peo.namefirst, peo.namelast
       ) all_stats
       ORDER BY id, season, team, qual DESC, g DESC, stat DESC
     ),
@@ -97,107 +119,142 @@ leaders_pitching_counting:
 
 
 leaders_batting_rate:
-  description: "Top N leaders for a batting rate stat with ties (weighted, traded-safe)"
-  params: ["season", "top_n", "stat_col", "stat_label"]
+  description: "Top N leaders for a batting rate stat with ties (weighted, Savant current season, Lahman historical fallback). NOTE: not currently reachable from any live routing path -- see AGENTS.md."
+  params: ["season", "top_n", "stat_col_savant", "stat_expr_lahman", "stat_label"]
   defaults: { top_n: 10 }
   param_types: { season: int, top_n: int }
   sql: |
     WITH base AS (
-      SELECT DISTINCT ON (fbl.idfg, fbl.season, TRIM(fbl.team))
-             fbl.idfg,
-             fbl.season,
-             TRIM(fbl.team) AS team,
-             fbl.name,
-             {{ stat_col }} AS stat,
-             fbl.pa,
-             fbl.g
-      FROM fangraphs_batting_lahman_like fbl
-      WHERE season = %(season)s
-      ORDER BY fbl.idfg, fbl.season, TRIM(fbl.team), fbl.pa DESC, fbl.g DESC
+      SELECT DISTINCT ON (id, season, team)
+             id, season, team, name, stat, pa, g
+      FROM (
+        SELECT s.player_id::text AS id, s.year AS season, s.team AS team,
+               CASE WHEN position(', ' in s.playername) > 0
+                    THEN split_part(s.playername, ', ', 2) || ' ' || split_part(s.playername, ', ', 1)
+                    ELSE s.playername END AS name,
+               r.{{ stat_col_savant }} AS stat, s.b_total_pa AS pa, s.b_game AS g
+        FROM savant_batting_traditional s
+        JOIN savant_batting_ratios r ON r.player_id = s.player_id AND r.year = s.year
+        WHERE s.year = %(season)s
+
+        UNION ALL
+
+        SELECT bat.playerid AS id, bat.yearid AS season, bat.teamid AS team,
+               peo.namefirst || ' ' || peo.namelast AS name,
+               {{ stat_expr_lahman }} AS stat, SUM(bat.ab) AS pa, SUM(bat.g) AS g
+        FROM batting bat
+        JOIN people peo ON peo.playerid = bat.playerid
+        WHERE bat.yearid = %(season)s
+          AND NOT EXISTS (SELECT 1 FROM savant_batting_traditional s2 WHERE s2.year = %(season)s)
+        GROUP BY bat.playerid, bat.yearid, bat.teamid, peo.namefirst, peo.namelast
+      ) all_stats
+      ORDER BY id, season, team, pa DESC, g DESC
     ),
     player AS (
       SELECT
-        idfg,
+        id,
         MAX(name) AS name,
         COALESCE(
           MAX(stat) FILTER (WHERE team = 'TOT'),
           SUM(stat * pa)::numeric / NULLIF(SUM(pa), 0)
         ) AS "{{ stat_label }}"
       FROM base
-      GROUP BY idfg
+      GROUP BY id
     )
     SELECT name, "{{ stat_label }}"
     FROM player
+    WHERE "{{ stat_label }}" IS NOT NULL
     ORDER BY "{{ stat_label }}" DESC, name ASC
     FETCH FIRST %(top_n)s ROWS WITH TIES;
 
 
 leaders_pitching_rate_low_is_best:
-  description: "Top N leaders for a pitching rate stat (lower is better) with ties (weighted, traded-safe)"
-  params: ["season", "top_n", "stat_col", "stat_label"]
-  defaults: { top_n: 10, stat_col: "era" }
+  description: "Top N leaders for a pitching rate stat (lower is better) with ties (weighted, Savant current season, Lahman historical fallback). NOTE: not currently reachable from any live routing path -- see AGENTS.md."
+  params: ["season", "top_n", "stat_col_savant", "stat_expr_lahman", "stat_label"]
+  defaults: { top_n: 10, stat_col_savant: "p_era" }
   param_types: { season: int, top_n: int }
   sql: |
     WITH base AS (
-      SELECT DISTINCT ON (fpl.idfg, fpl.season, TRIM(fpl.team))
-             fpl.idfg,
-             fpl.season,
-             TRIM(fpl.team) AS team,
-             fpl.name,
-             {{ stat_col }} AS stat,
-             fpl.ip,
-             fpl.g
-      FROM fangraphs_pitching_lahman_like fpl
-      WHERE season = %(season)s
-      ORDER BY fpl.idfg, fpl.season, TRIM(fpl.team), fpl.ip DESC, fpl.g DESC
+      SELECT DISTINCT ON (id, season, team)
+             id, season, team, name, stat, qual, g
+      FROM (
+        SELECT s.player_id::text AS id, s.year AS season, s.team AS team,
+               CASE WHEN position(', ' in s.playername) > 0
+                    THEN split_part(s.playername, ', ', 2) || ' ' || split_part(s.playername, ', ', 1)
+                    ELSE s.playername END AS name,
+               r.{{ stat_col_savant }} AS stat, s.p_game AS qual, s.p_game AS g
+        FROM savant_pitching_traditional s
+        JOIN savant_pitching_ratios r ON r.player_id = s.player_id AND r.year = s.year
+        WHERE s.year = %(season)s
+
+        UNION ALL
+
+        SELECT pit.playerid AS id, pit.yearid AS season, pit.teamid AS team,
+               peo.namefirst || ' ' || peo.namelast AS name,
+               {{ stat_expr_lahman }} AS stat, SUM(pit.ipouts) AS qual, SUM(pit.g) AS g
+        FROM pitching pit
+        JOIN people peo ON peo.playerid = pit.playerid
+        WHERE pit.yearid = %(season)s
+          AND NOT EXISTS (SELECT 1 FROM savant_pitching_traditional s2 WHERE s2.year = %(season)s)
+        GROUP BY pit.playerid, pit.yearid, pit.teamid, peo.namefirst, peo.namelast
+      ) all_stats
+      ORDER BY id, season, team, qual DESC, g DESC
     ),
     pitcher AS (
       SELECT
-        idfg,
+        id,
         MAX(name) AS name,
         COALESCE(
           MAX(stat) FILTER (WHERE team = 'TOT'),
-          SUM(stat * ip)::numeric / NULLIF(SUM(ip), 0)
+          SUM(stat * qual)::numeric / NULLIF(SUM(qual), 0)
         ) AS "{{ stat_label }}"
       FROM base
-      GROUP BY idfg
+      GROUP BY id
     )
     SELECT name, "{{ stat_label }}"
     FROM pitcher
+    WHERE "{{ stat_label }}" IS NOT NULL
     ORDER BY "{{ stat_label }}" ASC, name ASC
     FETCH FIRST %(top_n)s ROWS WITH TIES;
 
 leaders_batting_qualified:
-  description: "Top N leaders with PA qualification (3.1 * max team games) with ties (traded-safe)"
-  params: ["season", "top_n", "stat_agg", "stat_label"]
+  description: "Top N leaders for a batting stat with PA qualification (3.1 * max team games), ties, Savant current season / Lahman historical fallback"
+  params: ["season", "top_n", "stat_col_savant", "stat_col_lahman", "stat_label"]
   defaults: { top_n: 10 }
   param_types: { season: int, top_n: int }
   sql: |
     WITH tg AS (
       SELECT MAX(g) AS max_games
       FROM (
-        SELECT b_game AS g, year AS season FROM savant_batting_traditional WHERE year >= 2025
+        SELECT b_game AS g, year AS season FROM savant_batting_traditional
         UNION ALL
-        SELECT g, season FROM fangraphs_batting_lahman_like WHERE season < 2025
+        SELECT g, yearid AS season FROM batting
+        WHERE NOT EXISTS (SELECT 1 FROM savant_batting_traditional s2 WHERE s2.year = batting.yearid)
       ) all_g
       WHERE season = %(season)s
     ),
     base AS (
       SELECT DISTINCT ON (id, season, team)
-             id,
-             season,
-             team,
-             name,
-             pa,
-             g
+             id, season, team, name, stat, pa, g
       FROM (
-        SELECT player_id AS id, year AS season, team AS team, playername AS name, b_total_pa AS pa, b_game AS g
+        -- Use Savant if it has rows for the requested season (the current, in-progress season)
+        SELECT player_id::text AS id, year AS season, team AS team,
+               CASE WHEN position(', ' in playername) > 0
+                    THEN split_part(playername, ', ', 2) || ' ' || split_part(playername, ', ', 1)
+                    ELSE playername END AS name,
+               {{ stat_col_savant }} AS stat, b_total_pa AS pa, b_game AS g
         FROM savant_batting_traditional
-        WHERE year >= 2025 AND year = %(season)s
+        WHERE year = %(season)s
         UNION ALL
-        SELECT idfg AS id, season, TRIM(team) AS team, name, pa, g
-        FROM fangraphs_batting_lahman_like
-        WHERE season < 2025 AND season = %(season)s
+        -- Otherwise fall back to Lahman (any season Savant doesn't have)
+        SELECT bat.playerid AS id, bat.yearid AS season, bat.teamid AS team,
+               peo.namefirst || ' ' || peo.namelast AS name,
+               SUM(bat.{{ stat_col_lahman }}) AS stat, SUM(bat.ab) AS pa, SUM(bat.g) AS g
+        FROM batting bat
+        JOIN people peo ON peo.playerid = bat.playerid
+        WHERE bat.yearid = %(season)s
+          AND NOT EXISTS (SELECT 1 FROM savant_batting_traditional s2 WHERE s2.year = %(season)s)
+        GROUP BY bat.playerid, bat.yearid, bat.teamid, peo.namefirst, peo.namelast
       ) all_stats
       ORDER BY id, season, team, pa DESC, g DESC
     ),
@@ -209,7 +266,10 @@ leaders_batting_qualified:
           MAX(pa) FILTER (WHERE team = 'TOT'),
           SUM(pa) FILTER (WHERE team NOT IN ('TOT','---'))
         ) AS pa_total,
-        {{ stat_agg }} AS "{{ stat_label }}"
+        COALESCE(
+          MAX(stat) FILTER (WHERE team = 'TOT'),
+          SUM(stat) FILTER (WHERE team NOT IN ('TOT','---'))
+        )::numeric AS "{{ stat_label }}"
       FROM base
       GROUP BY id
     ),

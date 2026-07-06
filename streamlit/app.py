@@ -373,7 +373,8 @@ def render_home():
             - Player stats by season or career
             - Leaderboards (top 10, qualified players)
             - Team stats, comparisons
-            - Advanced stats: WAR, wOBA, FIP, ISO, xFIP
+            - Statcast metrics (any season): xwOBA, exit velo, ISO, hard-hit %
+            - WAR, wOBA, FIP, xFIP: historical seasons only (not current season)
             """)
         with c2:
             st.markdown("""
@@ -433,6 +434,7 @@ def render_home():
                         if fast_sql:
                             fast_sql = lint_sql(fast_sql)
                             sql_query = fast_sql
+                            bound_params = {"season": season, "top_n": 10}
                             if DEBUG_UI:
                                 st.info("Using fast-path.")
                     except Exception as e:

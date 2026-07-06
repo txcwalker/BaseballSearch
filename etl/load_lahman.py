@@ -1,152 +1,217 @@
 # etl/load_lahman.py
+#
+# Incrementally loads new-season rows from the local Lahman CSVs
+# (data/lahman_raw/) into AWS RDS. Only inserts rows for a year that isn't
+# already in the DB for that table -- never updates or deletes existing rows.
+# `people` is handled separately (no season column): only playerids not
+# already present are inserted. Pure dimension tables with no season concept
+# (schools, parks, teamsfranchises) are intentionally not touched here.
+#
+# Defaults to --dry-run (report what WOULD be inserted, write nothing).
+# Pass --commit to actually write to the database.
 
-# Script to load lahman data from the local csvs files into the local database
-
-# Importing Python Packages
-import os
+import argparse
 import csv
+import logging
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
 import psycopg2
 from dotenv import load_dotenv
-import logging
-from datetime import datetime
 
-# Set up logging
-LOG_DIR = "../logs"
-os.makedirs(LOG_DIR, exist_ok=True)
-log_filename = datetime.now().strftime("lahman_load_%Y-%m-%d_%H%M%S.txt")
-LOG_PATH = os.path.join(LOG_DIR, log_filename)
-
-logging.basicConfig(
-    filename=LOG_PATH,
-    level=logging.ERROR,
-    format="%(asctime)s — %(levelname)s — %(message)s",
-    filemode="w"
-)
-
-# Conflict targets by table for safe UPSERTs
-UPSERT_KEYS = {
-    "people": ["playerid"],
-    "batting": ["playerid", "yearid", "stint"],
-    "pitching": ["playerid", "yearid", "stint"],
-    "fielding": ["playerid", "yearid", "stint", "pos"],
-    "salaries": ["playerid", "yearid", "teamid", "lgid"],
-
-}
-
-
-# Connecting to database
-load_dotenv(dotenv_path='../.env')
+ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT / ".env.awsrds")
 
 DB_PARAMS = {
-    "dbname": os.getenv("PGDATABASE"),
-    "user": os.getenv("PGUSER"),
-    "password": os.getenv("PGPASSWORD"),
-    "host": os.getenv("PGHOST"),
-    "port": os.getenv("PGPORT"),
+    "dbname": os.environ["AWSDATABASE"],
+    "user": os.environ["AWSUSER"],
+    "password": os.environ["AWSPASSWORD"],
+    "host": os.environ["AWSHOST"],
+    "port": os.environ["AWSPORT"],
 }
 
-# File path where lahman dta is stored
-CSV_DIR = "../data/lahman_raw"
+CSV_DIR = ROOT / "data" / "lahman_raw"
+LOG_DIR = ROOT / "logs"
+LOG_DIR.mkdir(exist_ok=True)
 
-# Function to Load csvs into tables as dictate by db/schema_lahman.sql
-def load_csv_to_table(filename, conn, valid_playerids=None):
-    table_name = os.path.splitext(filename)[0].lower()
-    filepath = os.path.join(CSV_DIR, filename)
-    print(f"📥 Loading {filename} into `{table_name}`...")
+log_path = LOG_DIR / datetime.now().strftime("lahman_load_%Y-%m-%d_%H%M%S.txt")
+logging.basicConfig(filename=log_path, level=logging.INFO,
+                     format="%(asctime)s - %(levelname)s - %(message)s", filemode="w")
 
-    with open(filepath, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
+# table_name -> (csv_filename, year_column). All Lahman season tables use
+# "yearid" except homegames, which uses "yearkey".
+YEAR_KEYED_TABLES = {
+    "batting": ("Batting.csv", "yearid"),
+    "pitching": ("Pitching.csv", "yearid"),
+    "fielding": ("Fielding.csv", "yearid"),
+    "fieldingof": ("FieldingOF.csv", "yearid"),
+    "fieldingofsplit": ("FieldingOFsplit.csv", "yearid"),
+    "teams": ("Teams.csv", "yearid"),
+    "teamshalf": ("TeamsHalf.csv", "yearid"),
+    "battingpost": ("BattingPost.csv", "yearid"),
+    "pitchingpost": ("PitchingPost.csv", "yearid"),
+    "fieldingpost": ("FieldingPost.csv", "yearid"),
+    "allstarfull": ("AllstarFull.csv", "yearid"),
+    "appearances": ("Appearances.csv", "yearid"),
+    "managers": ("Managers.csv", "yearid"),
+    "managershalf": ("ManagersHalf.csv", "yearid"),
+    "awardsplayers": ("AwardsPlayers.csv", "yearid"),
+    "awardsmanagers": ("AwardsManagers.csv", "yearid"),
+    "awardsshareplayers": ("AwardsSharePlayers.csv", "yearid"),
+    "awardssharemanagers": ("AwardsShareManagers.csv", "yearid"),
+    "halloffame": ("HallOfFame.csv", "yearid"),
+    "salaries": ("Salaries.csv", "yearid"),
+    "seriespost": ("SeriesPost.csv", "yearid"),
+    "collegeplaying": ("CollegePlaying.csv", "yearid"),
+    "homegames": ("HomeGames.csv", "yearkey"),
+}
 
-        # Rename column names so that they do not start with numbers
-        COLUMN_RENAMES = {
-            "2b": "doubles",
-            "3b": "triples",
-            "2B": "doubles",
-            "3B": "triples",
-            # Add more if needed
-        }
+# Not handled here: no season column, rarely change, not needed for
+# "bring season stats current" -- schools, parks, teamsfranchises.
 
-        # Ensuring the tables have headers
-        original_fields = reader.fieldnames
-        if not original_fields:
-            print(f"⚠️  Skipping {filename}: No header row found.")
-            return
 
-        # Standrdizing column names for consistancy
-        columns = [COLUMN_RENAMES.get(col.strip().lower(), col.strip().lower()) for col in original_fields]
+def get_table_columns(cur, table_name):
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=%s",
+        (table_name,),
+    )
+    return {r[0] for r in cur.fetchall()}
 
-        with conn.cursor() as cur:
-            insert_count = 0
-            fail_count = 0
 
-            for i, row in enumerate(reader):
-                try:
-                    # Special skip logic for halloffame
-                    if table_name == "halloffame":
-                        pid = row.get("playerID") or row.get("playerid")
-                        if not pid or pid not in valid_playerids:
-                            continue
+def read_csv_rows(csv_path):
+    # utf-8-sig strips a BOM if present (Teams.csv/People.csv have one);
+    # a no-op if absent (Batting.csv does not).
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        rows = [{k.strip().lower(): v for k, v in row.items()} for row in reader]
+    return rows
 
-                    # Clean up row data
-                    row_cleaned = {k.strip().lower(): v for k, v in row.items()} # Lower cases, removes NONE values
-                    values = [row_cleaned.get(col, None) if row_cleaned.get(col, "") != "" else None for col in columns]
 
-                    # Sage Insert and silent skip for duplicates
-                    placeholders = ", ".join(["%s"] * len(columns))
-                    column_names = ", ".join([f'"{col}"' for col in columns])
+def insert_rows(cur, table_name, columns, rows, commit: bool):
+    if not rows:
+        return 0
+    col_list = ", ".join(f'"{c}"' for c in columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    sql = f'INSERT INTO {table_name} ({col_list}) VALUES ({placeholders})'
+    values = [
+        tuple((row.get(c) or None) for c in columns)
+        for row in rows
+    ]
+    if commit:
+        cur.executemany(sql, values)
+    return len(values)
 
-                    conflict_cols = UPSERT_KEYS.get(table_name)
-                    if conflict_cols:
-                        conflict_str = ", ".join(conflict_cols)
-                        update_fields = [col for col in columns if col not in conflict_cols]
-                        update_clause = ", ".join([f"{col} = EXCLUDED.{col}" for col in update_fields])
-                        where_clause = " OR ".join(
-                            [f"{table_name}.{col} IS DISTINCT FROM EXCLUDED.{col}" for col in update_fields])
 
-                        sql = f"""
-                            INSERT INTO {table_name} ({column_names})
-                            VALUES ({placeholders})
-                            ON CONFLICT ({conflict_str}) DO UPDATE
-                            SET {update_clause}
-                            WHERE {where_clause}
-                        """
-                    else:
-                        sql = f"""
-                            INSERT INTO {table_name} ({column_names})
-                            VALUES ({placeholders})
-                            ON CONFLICT DO NOTHING
-                        """
+def load_year_keyed_table(conn, table_name, csv_filename, year_col, commit: bool):
+    csv_path = CSV_DIR / csv_filename
+    if not csv_path.exists():
+        print(f"[skip] {table_name}: {csv_filename} not found")
+        return
 
-                except Exception as e:
-                    conn.rollback()
-                    msg = f"Row {i} failed in `{table_name}`: {e}"
-                    print("⚠️", msg)
-                    logging.error(msg)
-                    fail_count += 1
+    with conn.cursor() as cur:
+        db_columns = get_table_columns(cur, table_name)
+        cur.execute(f'SELECT COALESCE(MAX("{year_col}"), 0) FROM {table_name}')
+        max_year_in_db = cur.fetchone()[0]
 
-            conn.commit()
-            print(f"✅ Finished loading `{table_name}` — {insert_count} inserted, {fail_count} failed.\n")
+    rows = read_csv_rows(csv_path)
+    if not rows:
+        print(f"[skip] {table_name}: CSV is empty")
+        return
+
+    # CSV column names -> only the ones that actually exist on the table
+    # (drops stray columns like People.csv's leading "id" that don't map
+    # to anything real, instead of assuming every CSV column is valid).
+    csv_columns = [c for c in rows[0].keys() if c in db_columns]
+    dropped = [c for c in rows[0].keys() if c not in db_columns]
+
+    new_rows = [r for r in rows if int(r.get(year_col) or -1) > max_year_in_db]
+
+    print(f"[{table_name}] DB max {year_col}={max_year_in_db} | CSV rows={len(rows)} | "
+          f"new rows to insert={len(new_rows)} | columns used={len(csv_columns)}"
+          + (f" | dropped unmatched CSV columns: {dropped}" if dropped else ""))
+
+    if not new_rows:
+        return
+
+    with conn.cursor() as cur:
+        try:
+            n = insert_rows(cur, table_name, csv_columns, new_rows, commit)
+            if commit:
+                conn.commit()
+                print(f"  -> inserted {n} rows into {table_name}")
+            else:
+                conn.rollback()
+                print(f"  -> DRY RUN: would insert {n} rows (nothing written)")
+        except Exception as e:
+            conn.rollback()
+            msg = f"{table_name}: insert failed: {e}"
+            print("  -> ERROR:", msg)
+            logging.error(msg)
+
+
+def load_people(conn, commit: bool):
+    csv_path = CSV_DIR / "People.csv"
+    if not csv_path.exists():
+        print("[skip] people: People.csv not found")
+        return
+
+    with conn.cursor() as cur:
+        db_columns = get_table_columns(cur, "people")
+        cur.execute("SELECT playerid FROM people")
+        existing_ids = {r[0] for r in cur.fetchall()}
+
+    rows = read_csv_rows(csv_path)
+    csv_columns = [c for c in rows[0].keys() if c in db_columns]
+    dropped = [c for c in rows[0].keys() if c not in db_columns]
+    new_rows = [r for r in rows if r.get("playerid") and r["playerid"] not in existing_ids]
+
+    print(f"[people] existing={len(existing_ids)} | CSV rows={len(rows)} | "
+          f"new players to insert={len(new_rows)} | columns used={len(csv_columns)}"
+          + (f" | dropped unmatched CSV columns: {dropped}" if dropped else ""))
+
+    if not new_rows:
+        return
+
+    with conn.cursor() as cur:
+        try:
+            n = insert_rows(cur, "people", csv_columns, new_rows, commit)
+            if commit:
+                conn.commit()
+                print(f"  -> inserted {n} new players into people")
+            else:
+                conn.rollback()
+                print(f"  -> DRY RUN: would insert {n} new players (nothing written)")
+        except Exception as e:
+            conn.rollback()
+            msg = f"people: insert failed: {e}"
+            print("  -> ERROR:", msg)
+            logging.error(msg)
+
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--commit", action="store_true",
+                         help="Actually write to the database. Without this flag, runs as a dry run (no writes).")
+    parser.add_argument("--only", help="Comma-separated table names to limit this run to (default: all).")
+    args = parser.parse_args()
+
+    commit = args.commit
+    only = set(args.only.split(",")) if args.only else None
+
+    print(f"Mode: {'COMMIT (writing to AWS RDS)' if commit else 'DRY RUN (no writes)'}")
     conn = psycopg2.connect(**DB_PARAMS)
     try:
-        # Preload valid playerids for halloffame
-        valid_playerids = set()
-        with conn.cursor() as cur:
-            cur.execute("SELECT playerid FROM people")
-            valid_playerids = {row[0] for row in cur.fetchall()}
-
-        for filename in os.listdir(CSV_DIR):
-            if filename.endswith(".csv"):
-                if filename.lower() == "halloffame.csv":
-                    load_csv_to_table(filename, conn, valid_playerids)
-                else:
-                    load_csv_to_table(filename, conn)
-        print("🎉 All tables loaded.")
+        load_people(conn, commit)
+        for table_name, (csv_filename, year_col) in YEAR_KEYED_TABLES.items():
+            if only and table_name not in only:
+                continue
+            load_year_keyed_table(conn, table_name, csv_filename, year_col, commit)
     finally:
         conn.close()
+    print(f"\nDone. Log: {log_path}")
 
-# Makes sure that main only runs when the script (load_lahman in this case) is called directly not when/if this is
-# imported from somewhere else
+
 if __name__ == "__main__":
     main()
