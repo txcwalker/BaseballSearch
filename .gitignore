@@ -27,6 +27,8 @@ utils.py
 # IDE
 .vscode/
 .idea/
+.vs/
+.claude/
 *.log
 
 # OS
@@ -37,4 +39,7 @@ Thumbs.db
 data/
 outputs/
 *.csv
+!tests/test_questions*.csv
 .venv/
+.venv_test/
+.streamlit/
