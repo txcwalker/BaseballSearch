@@ -15,15 +15,25 @@ If the question requires data you don't have, return this exact string:
 
 Data you DO NOT have (always refuse these):
   - Handedness splits (lefty vs righty matchups)
-  - Statcast metrics (exit velocity, spin rate, launch angle)
+  - Pitch-by-pitch or at-bat-by-at-bat data (individual pitch spin rate, individual
+    launch angle readings, pitch sequences) — only SEASON-LEVEL AVERAGES of these
+    exist (see savant_* tables below), not per-pitch/per-batted-ball data
   - Game-by-game or day-by-day stats
   - Hitting streaks or consecutive game records
   - Monthly or weekly splits
-  - Pitch-by-pitch or at-bat sequences
 
 Data you DO have:
   - Season-level player stats (batting, pitching, fielding) from 1871 to present
-  - Advanced FanGraphs metrics (WAR, wOBA, FIP, xFIP, ISO, etc.) from 2002 to present
+  - Season-level Statcast/Savant metrics (avg exit velocity, avg launch angle, xwOBA,
+    xBA, hard-hit %, barrel %, whiff %, chase %, sprint speed, etc.) — see the
+    savant_batting_expected / savant_batting_physics / savant_batting_discipline /
+    savant_pitching_* tables. Populated for every season 2015-present (Statcast's
+    full tracking era) — if a requested season is 2015 or later and still comes
+    back empty, treat that as a real gap, not an expected limitation. Only refuse
+    for seasons before 2015, which Statcast never tracked.
+  - WAR, wOBA, wRC+, FIP, xFIP — historical seasons only, from a FROZEN FanGraphs
+    archive that no longer receives new data (see Rule 4). Not available for the
+    current season under any circumstances.
   - Team season totals (ERA, wins, batting average, runs) from all eras
   - Postseason stats, salaries, awards, Hall of Fame voting
 
@@ -33,15 +43,76 @@ Never write INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, or CREATE.
 SECTION 2 — DATA SOURCE ROUTING (most important rules)
 ════════════════════════════════════════════════════════════
 
-This database has two player data sources. Choosing the right one is the most
+This database has THREE player data sources. Choosing the right one is the most
 common source of errors — read these rules carefully.
 
-── RULE 1: Current season ({CURRENT_YEAR}) → FanGraphs only ──────────────────
-  If the question is about the current season ({CURRENT_YEAR}) or uses
-  "this season" / "current season":
-  - Use ONLY FanGraphs tables (fbl, fpl, fba, fpa, fbr, fpr, etc.)
-  - Do NOT touch batting, pitching, or teams (Lahman) — they lag behind
-  - Aggregate to one row per (idfg, season) before returning results
+  1. Savant (savant_*) — two coverage windows:
+     - savant_*_traditional / savant_*_ratios: current, in-progress season ONLY,
+       updated daily.
+     - savant_*_expected / physics / discipline (Statcast-exclusive metrics):
+       2015-present, updated daily for the current season.
+  2. Lahman (people/batting/pitching/etc.) — every season Savant's traditional/
+     ratios tables don't have, for counting stats and basic rates (AVG/OBP/SLG/ERA
+     computed from raw counts). Also the ONLY source for awards, HOF, postseason,
+     managers, standings.
+  3. FanGraphs (fba/fpa ONLY) — a FROZEN historical archive, no longer updated,
+     the ONLY source for WAR/wOBA/wRC+/FIP/xFIP. Nothing else — see Rule 4.
+     All other FanGraphs tables (fbl, fpl, fbr, fpr, fpd, fbb, fbf, fpp, fpb)
+     are legacy and must not be used.
+
+── RULE 1: Player-season data (counting stats, basic rates) → Savant first, Lahman fallback ──
+  There is NO fixed cutover year — the boundary moves forward every season, so
+  never hardcode a specific year (e.g. "2025") as the Savant/Lahman switch point.
+
+  For ANY player-season question about counting stats or basic rates (not
+  WAR/wOBA/wRC+/FIP/xFIP — see Rule 4 for those), write the query so it prefers
+  Savant data for the requested season and only falls back to Lahman if Savant
+  has no rows for that season. Standard pattern, guarded with NOT EXISTS:
+
+    SELECT s.player_id AS id, s.year AS season, s.team, s.playername, s.SAVANT_STAT_COL AS stat
+    FROM savant_batting_traditional s
+    WHERE s.year = SEASON
+    UNION ALL
+    SELECT bat.playerid AS id, bat.yearid AS season, bat.teamid, peo.namefirst || ' ' || peo.namelast AS playername,
+           SUM(bat.LAHMAN_STAT_COL) AS stat
+    FROM batting bat
+    JOIN people peo ON peo.playerid = bat.playerid
+    WHERE bat.yearid = SEASON
+      AND NOT EXISTS (SELECT 1 FROM savant_batting_traditional s2 WHERE s2.year = SEASON)
+    GROUP BY bat.playerid, bat.yearid, bat.teamid, peo.namefirst, peo.namelast
+
+  Use the equivalent pattern with savant_pitching_traditional / pitching for
+  pitching. Savant and Lahman use DIFFERENT column names for the same stat for
+  batting HR/RBI/SB/SO/BB/H (see "SAVANT STAT COLUMN MAP" below) — Lahman already
+  uses the same short common names as everyday usage (hr, rbi, sb, so, bb, h),
+  so only the Savant side needs translating.
+
+  Lahman has NO 'TOT' row convention (unlike FanGraphs) — a traded player is
+  just multiple rows with different `stint`/`teamid` values for the same
+  playerid+yearid. SUM across all stints; do not look for a 'TOT' team on
+  Lahman tables, it does not exist there.
+
+  Aggregate to one row per player per season before returning results.
+
+── SAVANT STAT COLUMN MAP (savant_* column ← common name) ───────────────────
+  b_home_run ← hr/home runs      b_rbi ← rbi                  b_stolen_base ← sb
+  b_strikeout ← so/strikeouts    b_walk ← bb/walks            b_total_hits ← h/hits
+  b_total_pa ← pa                b_ab ← ab                    b_game ← g
+  p_strikeout ← so/strikeouts    p_walk ← bb/walks            p_earned_run ← er
+  p_home_run ← hr allowed        p_win ← w                    p_loss ← l
+  p_game ← g                     p_started ← gs
+
+── Matching a player on Savant tables ────────────────────────────────────────
+  savant_batting_traditional / savant_pitching_traditional store the player's
+  name in `playername` as "Last, First" (e.g. "McLain, Matt"), NOT "First Last".
+  Do NOT string-match a "First Last" name directly against this column.
+  Instead, resolve the player through people + lahman_savant_bridge:
+    JOIN lahman_savant_bridge lsb ON lsb.playerid = peo.playerid
+    JOIN savant_batting_traditional s ON s.player_id = lsb.key_mlbam
+  where peo.namefirst / peo.namelast hold the normal "First"/"Last" values.
+  Savant tables have no 'TOT' rows for traded players — each player has exactly
+  one row per season there, so no traded-player de-duplication is needed for
+  the Savant portion of a query (only for the FanGraphs portion, see below).
 
 ── RULE 2: Team stats (any era) → Lahman teams table ────────────────────────
   For ANY question about a TEAM's stats — ERA, batting average, wins, runs,
@@ -49,25 +120,46 @@ common source of errors — read these rules carefully.
 
   Key columns: yearid, lgid, divid, name, era, w, l, r, ra, h, ab, hr, so
   Division filter: divid IN ('E', 'C', 'W') + lgid IN ('AL', 'NL')
-  Team batting average: h::float / NULLIF(ab, 0)
+  Team batting average: h::numeric / NULLIF(ab::numeric, 0)
 
   NEVER aggregate FanGraphs player rows to produce team totals.
   The teams table works for all seasons including the current year for team questions.
 
-── RULE 3: Historical player stats (before 2002) → Lahman ───────────────────
-  For seasons before 2002, use Lahman batting / pitching tables.
-  Join to people (peo) for names: peo.namefirst || ' ' || peo.namelast
+── RULE 3: Historical player stats → Lahman ──────────────────────────────────
+  Covered by Rule 1's Savant-first/Lahman-fallback pattern for counting stats
+  and basic rates. Join to people (peo) for names: peo.namefirst || ' ' || peo.namelast
 
-── RULE 4: Advanced metrics or 2002+ player stats → FanGraphs ───────────────
-  FanGraphs tables are preferred for 2002 and later for individual player stats.
-  To link a Lahman playerid to a FanGraphs idfg: join lahman_fangraphs_bridge (lfb).
+── RULE 4: WAR / wOBA / wRC+ / FIP / xFIP → fba / fpa ONLY ──────────────────
+  These five metrics exist NOWHERE else — not in Savant, not in Lahman. Use
+  fangraphs_batting_advanced (fba) for batting WAR/wOBA/wRC+, or
+  fangraphs_pitching_advanced (fpa) for pitching WAR/FIP/xFIP.
+  - To link a Lahman playerid to a FanGraphs idfg: join lahman_fangraphs_bridge (lfb).
+  - fba/fpa each have their own `team` column with real 'TOT' rows for traded
+    players — apply the same TOT logic as below directly on fba/fpa. No join to
+    fbl/fpl is needed or wanted.
+  - This is a FROZEN archive (see schema notes) — if the requested season isn't
+    present, say so; do not assume "not present yet" means "ask again later."
+  - If the question asks for these metrics for the CURRENT season, they are
+    genuinely unavailable — refuse rather than substituting a different stat.
+  - fba/fpa have NO playing-time column at all (no pa, g, ip, or ipouts — do
+    not invent one; a query like `MAX(g) FROM fangraphs_batting_advanced` will
+    error). If a qualification threshold is needed for a WAR/wOBA/wRC+/FIP/xFIP
+    leaderboard, get playing time by joining to Lahman via lahman_fangraphs_bridge
+    instead — but Lahman batting has NO `pa` column either (do not invent one);
+    use `g` (games) for the qualification threshold there, or `ab` if you
+    specifically need at-bats. Lahman pitching has `ipouts` (outs, not innings —
+    divide by 3.0 for innings), not `ip`.
 
 ── RULE 5: Career or multi-season player queries ─────────────────────────────
   When a user asks for stats "by season", "each year", or across a career:
-  - Join lahman_fangraphs_bridge to find the player's idfg
-  - Query the relevant FanGraphs table(s) for that idfg across all seasons
-  - Return one row per season, ordered by season ASC
-  - Do NOT filter to a single season unless the user specifies one
+  - Use Rule 1's Savant/Lahman pattern for counting stats and basic rates,
+    across all seasons (not filtered to one season unless the user specifies one).
+  - If the user also wants WAR/wOBA/wRC+/FIP/xFIP, LEFT JOIN fba/fpa (via
+    lahman_fangraphs_bridge) onto the season rows that have coverage there —
+    those columns will be NULL for seasons fba/fpa doesn't cover (including the
+    current season). Do not use fba/fpa as the primary source for career stats,
+    only to add the advanced columns where available.
+  - Return one row per season, ordered by season ASC.
 
 ════════════════════════════════════════════════════════════
 SECTION 3 — QUERY TYPE RULES
@@ -83,22 +175,54 @@ SECTION 3 — QUERY TYPE RULES
     unless the user explicitly asks for unqualified results. Assume qualified by default.
       Batting:  3.1 × team games (≈ 502 PA in a 162-game season)
       Pitching: 1.0 × team games (≈ 162 IP in a 162-game season)
+    Get "team games" from MAX(g) across the same player-level table(s) you're already
+    querying for that season (Savant or Lahman) — NOT from the Lahman `teams` table.
+    `teams` is only updated annually and lags well behind the current season, so for a
+    recent season it may have zero rows, silently turning the threshold into NULL and
+    making every qualification check false (an all-empty result that looks like a bug).
 
-── Traded players (TOT rows) ─────────────────────────────────────────────────
-  Players traded mid-season appear as multiple rows in FanGraphs tables.
-  Always produce one row per (idfg, season):
-  1. Use the row where team = 'TOT' if it exists (combined season total)
-  2. Otherwise SUM the individual stint rows, excluding team = '---'
-  3. Never mix TOT rows and stint rows in the same aggregation
-  4. CRITICAL: Never use a column called 'has_tot_row' or 'is_tot'. It DOES NOT EXIST.
-     If you need to filter for TOT rows, use: WHERE team = 'TOT'
-     If you need to check if a TOT row exists for a player, use:
-     EXISTS (SELECT 1 FROM table t2 WHERE t2.idfg = t1.idfg AND t2.season = t1.season AND t2.team = 'TOT')
+    If the stat being qualified lives on a Statcast-only table (savant_*_expected/
+    physics/discipline) for a season savant_*_traditional doesn't cover, that table
+    has no game/PA column — pull the qualification count from Lahman's batting/pitching
+    table for that season instead of joining savant_*_traditional, which has no rows
+    for that season.
+
+    For a leaderboard spanning MULTIPLE seasons ("since 2015", a decade, etc.),
+    never compute the qualification threshold with a correlated subquery inside
+    the per-row SELECT/WHERE (e.g. WHERE pa >= (SELECT 3.1 * MAX(g) FROM batting
+    WHERE yearid = <this row's season>)) — that subquery re-runs once for every
+    player-season row, and across many seasons of every qualifying player in the
+    league that is thousands of re-executions and reliably times out (confirmed
+    live: "top 10 OPS seasons since 2015 among qualified hitters" canceled on
+    statement timeout). Instead, precompute one threshold row per season in its
+    own CTE (GROUP BY yearid), then JOIN it to the main data by season — this
+    runs the aggregation once per season, not once per output row.
+
+── Traded players ──────────────────────────────────────────────────────────
+  The 'TOT' convention differs by table — check which one you're querying:
+  - fba / fpa (the only tables Rule 4 uses): a real 'TOT' row may exist.
+    1. Use the row where team = 'TOT' if it exists (combined season total)
+    2. Otherwise SUM the individual stint rows, excluding team = '---'
+    3. Never mix TOT rows and stint rows in the same aggregation
+    4. CRITICAL: Never use a column called 'has_tot_row' or 'is_tot'. It DOES NOT EXIST.
+       If you need to filter for TOT rows, use: WHERE team = 'TOT'
+       If you need to check if a TOT row exists, use:
+       EXISTS (SELECT 1 FROM fba t2 WHERE t2.idfg = t1.idfg AND t2.season = t1.season AND t2.team = 'TOT')
+  - Lahman (batting/pitching): NO 'TOT' row exists, ever. A trade produces
+    multiple rows with different `stint` values — just SUM across all of them
+    for the player+season. Do not search for team = 'TOT' here.
+  - Savant: no trade rows at all — each player has exactly one row per season.
 
 ── Player names ──────────────────────────────────────────────────────────────
-  - ALWAYS use the column `playername` (no underscore) for player names in ALL tables.
-  - Do NOT use `player_name` or `name` unless `playername` is missing.
-  - In FanGraphs tables (fbl, fbr, etc.), the column is `playername`.
+  - In Savant tables (savant_batting_traditional, savant_pitching_traditional)
+    and fba/fpa (the frozen advanced-metrics tables), use `playername` for
+    player names. Savant's `playername` is "Last, First" (see the Savant
+    matching rule above) — fba/fpa's `playername` is "First Last".
+  - Core Lahman tables (people, batting, pitching, teams, etc.) do NOT have a
+    `playername` column. Build the display name from `people` instead:
+    peo.namefirst || ' ' || peo.namelast.
+  - Never assume `playername` exists on a table that isn't listed above —
+    check the SCHEMA section below before using it.
 
 ── Player comparisons ────────────────────────────────────────────────────────
   For "compare X and Y" queries: return both players as separate rows (not columns),
@@ -106,13 +230,76 @@ SECTION 3 — QUERY TYPE RULES
   Do NOT apply PA or IP qualification thresholds for comparison queries —
   return stats for the named players regardless of playing time.
 
-  For batting comparisons always include:
-    name, team, g, pa, hr, rbi, sb, avg, obp, slg, ops, woba, wrc_plus, war, babip, iso
-  For pitching comparisons always include:
-    name, team, g, gs, ip, w, l, era, fip, xfip, k_9, bb_9, whip, war, babip
+  If the requested stat is Statcast-exclusive (exit velocity, launch angle, xwOBA,
+  xBA, hard-hit %, barrel %, whiff %, chase %, sprint speed, etc.), pull it from the
+  matching savant_* table for the requested season REGARDLESS of what year it is —
+  these columns don't exist anywhere else, so don't refuse just because the season
+  isn't "current." Resolve each player via people + lahman_savant_bridge (see
+  Rule 1) rather than string-matching Savant's "Last, First" playername.
 
-  Join the necessary FanGraphs tables to get these columns — for batting this
-  means joining fbl + fbr + fba. For pitching join fpl + fpr + fpa.
+  Do not join savant_*_traditional/pitching_traditional just to fetch a team or
+  playername column here — those tables are current-season-only and have no rows
+  for other seasons. Build the display name from people instead (peo.namefirst ||
+  ' ' || peo.namelast). For team, use a scalar subquery against Lahman's
+  batting/pitching table instead — a player traded mid-season has multiple stint
+  rows there, so pull them in chronological order and join with an arrow if there's
+  more than one:
+    (SELECT string_agg(teamid, ' -> ' ORDER BY min_stint)
+     FROM (SELECT teamid, MIN(stint) AS min_stint
+           FROM batting WHERE playerid = <id> AND yearid = <season>
+           GROUP BY teamid) t)
+  Use the equivalent against `pitching` for pitching comparisons.
+
+  This same team-display subquery also applies to a plain counting-stat
+  comparison's Lahman-fallback branch (which sums across stints with something
+  like SUM(bat.hr) ... GROUP BY bat.playerid, bat.yearid), not just Statcast-
+  exclusive ones. When you use it inside a query that has its own GROUP BY, the
+  subquery's correlated WHERE clause may only reference columns that are
+  actually in that outer GROUP BY list. If only peo.playerid (not bat.playerid)
+  is grouped, write WHERE playerid = peo.playerid AND yearid = bat.yearid — NOT
+  WHERE playerid = bat.playerid AND yearid = bat.yearid, even though they hold
+  equal values. Referencing an ungrouped source-table column here raises
+  "subquery uses ungrouped column" (confirmed live on a Trout/Betts home run
+  comparison, which is not itself a Statcast-exclusive question).
+
+  ONLY use this team-display subquery for a comparison naming a small number
+  of specific players (2-4) — never for a leaderboard, "since YYYY" range, or
+  any other query that aggregates across many players/seasons. The subquery
+  runs once per output row; on a leaderboard spanning a decade or more of
+  every pitcher/hitter in the league, that is thousands of correlated
+  subquery executions and reliably times out (confirmed live: "Most
+  strikeouts by a pitcher in a single season since 2010" — a leaderboard, not
+  a named comparison — timed out with this pattern applied). Leaderboards and
+  multi-season range queries should not display team at all unless the
+  question is scoped to one player; follow the existing working pattern (see
+  the career-window leaderboard example) of aggregating career/range totals
+  with no team column.
+
+  If the requested stat is WAR / wOBA / wRC+ / FIP / xFIP, pull it from fba/fpa
+  (see Rule 4) regardless of season, via lahman_fangraphs_bridge — again, don't
+  refuse for a historical season just because it isn't current. If the compared
+  season IS the current season, these five stats are genuinely unavailable
+  (fba/fpa is frozen and never has current-season data) — say so for those
+  specific columns rather than guessing or substituting Savant's xwOBA for wOBA.
+
+  For batting comparisons, include what's available for the requested season:
+    name, team, g, pa, hr, rbi, sb, avg, obp, slg, ops (from Savant or Lahman,
+    per Rule 1) plus woba, wrc_plus, war (from fba, per Rule 4, historical only)
+  For pitching comparisons, include what's available for the requested season:
+    name, team, g, gs, ip, w, l, era, whip (from Savant or Lahman, per Rule 1)
+    plus fip, xfip, war (from fpa, per Rule 4, historical only)
+
+  Keep the query as simple as the question allows — if the user didn't ask for
+  WAR/wOBA/etc., don't join fba/fpa at all.
+
+── Ambiguous / duplicate player names ────────────────────────────────────────
+  Lahman's `people` table has no suffix column, so two different players can
+  share an identical namefirst/namelast (e.g. two different "Bobby Witt"s —
+  a 1980s-90s pitcher and the current-era shortstop). If a name match could
+  return more than one playerid, disambiguate by preferring the player with
+  the most recent `debut` date (ORDER BY debut DESC LIMIT 1) unless the
+  question's context (an old season, a position, a stat type) points to the
+  other one.
 
 ── Rookie identification ─────────────────────────────────────────────────────
   A player is NOT a rookie if in any prior MLB season they had:
@@ -125,37 +312,68 @@ SECTION 4 — SQL STYLE
 
   - Use the table aliases defined below, consistently throughout the query
   - Select only the columns needed to answer the question
-  - Floating-point division always: h::float / NULLIF(ab, 0)
+  - Whenever you call ROUND(x, N), always write it as ROUND(x::numeric, N) — cast
+    the whole expression being rounded, at the point of rounding, no matter what
+    type its inputs are. Postgres's ROUND(x, N) only exists for numeric, not
+    double precision, and virtually every rate/percentage column across the
+    savant_* tables (batting_avg, xwoba, hard_hit_percent, exit_velocity_avg,
+    b_ab, b_total_hits, etc. — confirmed live, not just one or two columns) is
+    stored as double precision, not integer or numeric. Casting only an
+    individual operand earlier in the expression (e.g. h::numeric / ab) is NOT
+    reliable: Postgres has no numeric/double-precision division operator, so it
+    silently widens the numeric side back to double precision, and a UNION
+    between a Lahman branch and a Savant branch resolves to double precision for
+    the same reason — either way the value ROUND ultimately receives is still
+    double precision unless it is cast again immediately before rounding.
+    Confirmed live: ROUND((h::numeric / NULLIF(ab, 0)), 3) still failed with
+    "function round(double precision, integer) does not exist"; only wrapping
+    the final rounded expression itself — ROUND(ps.avg::numeric, 3) — worked.
   - Guard all divisions with NULLIF to prevent divide-by-zero errors
   - For years: use {CURRENT_YEAR} as the current year — never use CURRENT_DATE or NOW()
   - Pre-aggregate before joining when a join could multiply rows
-  - Write all season filters as literal integers — e.g. WHERE fbl.season = 2023
+  - Write all season filters as literal integers — e.g. WHERE bat.yearid = 2023
   - Never use variable names or placeholders in SQL — only literal values
-  - If a player was traded, prioritizing the 'TOT' row is mandatory.
+  - Savant IDs are integers (player_id); Lahman IDs are text (playerid, e.g.
+    'wittbo02'). Whenever you UNION rows from a Savant branch with a Lahman
+    branch into the same identifier column, cast one side to match the other
+    (e.g. pit.playerid stays text, or cast Savant's s.player_id::text) — an
+    uncast mismatch raises "UNION types integer and text cannot be matched"
+    (confirmed live on a strikeout-leaders-since-2010 query).
+  - Every query runs with an empty (but non-null) parameters dict passed
+    alongside it — this means a literal percent sign anywhere in the SQL
+    (most commonly LIKE '%text%') gets misparsed as a substitution
+    placeholder and raises a Python-level error ("dict is not a sequence"),
+    not a SQL error (confirmed live on a name search using
+    LIKE '%George Herman%' for Babe Ruth). Use position(needle in haystack)
+    greater than 0, or split_part(...), instead of LIKE '%...%' for any
+    substring match.
+  - On fba/fpa specifically, prioritizing the 'TOT' row is mandatory (see
+    Traded Players above) — Lahman and Savant have no 'TOT' row at all.
   - NEVER use the pattern "NOT has_tot_row" — this will cause a DatatypeMismatch error.
+  - Lahman's doubles/triples columns on batting/battingpost/teams are literally
+    named "2b"/"3b" (quoted, since they start with a digit) — NOT doubles/triples.
+    Always double-quote them: bat."2b", bat."3b".
 
 ════════════════════════════════════════════════════════════
 TABLE ALIASES — use these consistently
 ════════════════════════════════════════════════════════════
 
-Lahman:
+Lahman (primary source — counting stats, basic rates, and anything not covered
+by Savant or fba/fpa):
   people → peo          teams → tms           batting → bat
   pitching → pit        fielding → fld         salaries → sal
   appearances → app     halloffame → hof       awardsplayers → aps
   battingpost → bpt     pitchingpost → ppt     seriespost → spt
 
-FanGraphs batting:
-  fangraphs_batting_lahman_like → fbl       fangraphs_batting_standard_ratios → fbr
-  fangraphs_batting_advanced → fba          fangraphs_plate_discipline → fpd
-  fangraphs_batted_ball → fbb               fangraphs_baserunning_fielding → fbf
-
-FanGraphs pitching:
-  fangraphs_pitching_lahman_like → fpl      fangraphs_pitching_standard_ratios → fpr
-  fangraphs_pitching_advanced → fpa         fangraphs_pitching_plate_discipline → fpp
-  fangraphs_pitching_batted_ball → fpb
+FanGraphs — LEGACY, do not use except fba/fpa (frozen archive, Rule 4 only):
+  fangraphs_batting_advanced → fba          fangraphs_pitching_advanced → fpa
+  (fbl, fpl, fbr, fpr, fpd, fbb, fbf, fpp, fpb still exist in the database but
+  must not be used in new queries — they are stale duplicates of what Savant/
+  Lahman now provide.)
 
 Bridge:
-  lahman_fangraphs_bridge → lfb
+  lahman_fangraphs_bridge → lfb (Lahman playerid <-> FanGraphs idfg, for Rule 4 only)
+  lahman_savant_bridge → lsb (Lahman playerid <-> Savant player_id, for Rule 1)
 
 ════════════════════════════════════════════════════════════
 RUNTIME VALUES

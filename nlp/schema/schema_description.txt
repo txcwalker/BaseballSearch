@@ -1,6 +1,31 @@
 Your PostgreSQL database contains the following tables:
 
-IMPORTANT: For current-season or recent data (2025 and 2026), always prioritize the 'savant_*' tables (28-37) as they are updated daily. Use 'fangraphs_*' tables only for historical advanced metrics or when 'savant' equivalents are missing.
+IMPORTANT — three-tier data model:
+  1. 'savant_*' tables (28-37) — two different coverage windows:
+     - Counting/ratio tables (savant_batting_traditional, savant_batting_ratios,
+       savant_pitching_traditional, savant_pitching_ratios) hold ONLY the current,
+       in-progress season, updated daily. Use these first for any player-season
+       counting/rate query. Do not assume a fixed cutover year (e.g. "2025") — the
+       boundary moves forward every season; check for rows instead.
+     - Statcast-exclusive tables (savant_batting_expected/physics/discipline,
+       savant_pitching_expected/physics/discipline) hold full history from 2015
+       onward (Statcast's first full tracking season) in addition to the current
+       season. Query these directly for any season 2015+ — no Lahman/FanGraphs
+       fallback exists for these columns, they exist nowhere else in this database.
+  2. Lahman tables (people, batting, pitching, teams, etc.) are the fallback for any
+     season Savant's counting/ratio tables don't have — historical counting stats
+     AND basic rate stats (AVG/OBP/SLG/ERA — compute these from Lahman's raw counts,
+     e.g. h::numeric/ab). Lahman is also the ONLY source for awards, Hall of Fame
+     voting, postseason stats, managers, and standings, at any season.
+  3. FanGraphs tables 'fangraphs_batting_advanced' (fba) / 'fangraphs_pitching_advanced'
+     (fpa) are a FROZEN historical archive — no new FanGraphs data can be loaded
+     anymore, ever, regardless of what MAX(season) shows in these tables (a stale
+     partial current-season row may exist and does NOT mean this data is live).
+     These two tables are the ONLY source for WAR, wOBA, wRC+, FIP, and xFIP — no
+     other table has them. Do not use FanGraphs for counting stats, basic rates, or
+     anything Lahman/Savant can already answer. All other 'fangraphs_*' tables
+     (fbl, fpl, fbr, fpr, fpd, fbb, fbf, fpp, fpb) are legacy/deprecated — do not
+     use them in new queries even though they still exist in the database.
 
 1. people
 Description: Biographical information for each player
@@ -43,7 +68,25 @@ naassoc (text) – Historical NA association.
 Description: Team Season Totals and context
 yearid (integer) – Season year.
 lgid (text) – League ID (AL/NL/etc.).
-teamid (text) – Team abbreviation.
+teamid (text) – Team abbreviation. Uses Lahman's historical convention, which
+  often does NOT match the modern MLB.com abbreviation — guessing the "obvious"
+  3-letter code is a confirmed, recurring source of silent wrong-team lookups
+  (e.g. teamid = 'NYY' for the Yankees returns nothing; the real value is
+  'NYA'). This affects roughly half the league, not just a couple of edge
+  cases. Current teamid values (this table's most recent season):
+    ARI Diamondbacks   ATH Athletics        ATL Braves         BAL Orioles
+    BOS Red Sox        CHN Cubs             CHA White Sox      CIN Reds
+    CLE Guardians      COL Rockies          DET Tigers         HOU Astros
+    KCA Royals         LAA Angels           LAN Dodgers        MIA Marlins
+    MIL Brewers        MIN Twins            NYN Mets           NYA Yankees
+    PHI Phillies       PIT Pirates          SDN Padres         SFN Giants
+    SEA Mariners       SLN Cardinals        TBA Rays           TEX Rangers
+    TOR Blue Jays      WAS Nationals
+  For a historical, relocated, or renamed franchise not covered above (this
+  table goes back to 1871 and includes teams that no longer exist under that
+  name/city), resolve the teamid via tms.name ILIKE '%keyword%' for the
+  relevant season instead of guessing — never assume a defunct or relocated
+  team's abbreviation from its modern equivalent.
 franchid (text) – Franchise ID.
 divid (text) – Division ID.
 rank (integer) – Division rank.
@@ -58,8 +101,8 @@ wswin (text) – Won World Series (Y/N).
 r (integer) – Runs scored.
 ab (integer) – At-bats.
 h (integer) – Hits.
-doubles (integer) – Doubles.
-triples (integer) – Triples.
+"2b" (integer) – Doubles. Column name is literally "2b" (quoted) — NOT `doubles`.
+"3b" (integer) – Triples. Column name is literally "3b" (quoted) — NOT `triples`.
 hr (integer) – Home runs.
 bb (integer) – Walks.
 so (integer) – Strikeouts.
@@ -112,8 +155,8 @@ g (integer) – Games.
 ab (integer) – At-bats.
 r (integer) – Runs.
 h (integer) – Hits.
-doubles (integer) – Doubles.
-triples (integer) – Triples.
+"2b" (integer) – Doubles. Column name is literally "2b" (quoted) — NOT `doubles`.
+"3b" (integer) – Triples. Column name is literally "3b" (quoted) — NOT `triples`.
 hr (integer) – Home runs.
 rbi (integer) – Runs batted in.
 sb (integer) – Stolen bases.
@@ -268,7 +311,8 @@ round (text) – Postseason round.
 playerid (text) – Player ID.
 teamid (text) – Team abbreviation.
 lgid (text) – League ID.
-g, ab, r, h, doubles, triples, hr, rbi, sb, cs, bb, so, ibb, hbp, sh, sf, gidp – Same as regular-season definitions.
+g, ab, r, h, hr, rbi, sb, cs, bb, so, ibb, hbp, sh, sf, gidp – Same as regular-season definitions.
+"2b", "3b" (integer) – Doubles/triples. Column names are literally "2b"/"3b" (quoted) — NOT `doubles`/`triples`.
 
 
 14. pitchingpost
@@ -336,7 +380,10 @@ l (integer) – Losses.
 
 
 20. awardsmanagers
-Description: Awards given to managers
+Description: Awards given to managers. Manager of the Year -> 'BBWAA Manager of
+  the Year' is the official award (no plain "Manager of the Year" string exists).
+  'TSN Manager of the Year' and 'This Year in Baseball Manager of the Year' are
+  separate media/fan awards, not alternate names for the same thing.
 
 playerid (text) – Manager’s player ID.
 awardid (text) – Award name.
@@ -350,7 +397,34 @@ notes (text) – Notes.
 Description: Awards given to players
 
 playerid (text) – Player ID.
-awardid (text) – Award name.
+awardid (text) – Award name. Real values are full names, not abbreviations — do
+  not guess a short form or invent a LIKE pattern from the question's wording
+  alone. Confirmed real values for commonly-asked awards:
+    MVP -> 'Most Valuable Player' (NOT 'MVP' — that bare string never appears;
+      ALCS MVP / NLCS MVP / World Series MVP / All-Star Game MVP are separate
+      postseason/exhibition awards that do say "MVP" literally).
+    Cy Young / Rookie of the Year / Gold Glove / Silver Slugger -> 'Cy Young
+      Award' / 'Rookie of the Year' / 'Gold Glove' / 'Silver Slugger' already
+      match natural phrasing closely; no translation needed.
+    Reliever of the Year -> 'Reliever of the Year Award' for 1976-2023 and
+      2025; the year 2024 specifically used the bare 'Reliever of the Year'
+      string instead (a one-year data inconsistency). Match with awardid ILIKE
+      '%reliever of the year%' rather than an exact string, or 2024's winners
+      will be missed. 'TSN Reliever of the Year' is a separate, genuinely
+      different award from The Sporting News, not an alternate name.
+    Comeback Player of the Year -> THREE distinct real awards exist:
+      'Comeback Player of the Year' (MLB's own, 2005-present), 'MLB Players
+      Choice Comeback Player' (players'-choice vote, 1997-2024), and 'TSN
+      Comeback Player of the Year' (The Sporting News, 1965-present). If the
+      question doesn't name a specific voting body, default to the plain
+      'Comeback Player of the Year'.
+    Triple Crown -> 'Triple Crown' for batting (AVG/HR/RBI), 'Pitching Triple
+      Crown' for pitching (W/ERA/SO) — cleanly separated in the data; choose
+      based on whether the question is about a hitter or a pitcher.
+  This table has ~80 distinct awardid values total, mostly niche one-off and
+  "This Year in Baseball [X]"/"TSN [X]" awards not covered above — when a
+  question names an award not listed here, prefer awardid ILIKE '%keyword%'
+  over guessing an exact string.
 yearid (integer) – Year awarded.
 lgid (text) – League.
 tie (text) – Tie flag.
@@ -358,7 +432,8 @@ notes (text) – Notes.
 
 
 22. awardssharemanagers
-Description: Manager award voting shares
+Description: Manager award voting shares. Uses the same awardid conventions as
+  awardsmanagers (item 20) — see that entry for real values.
 
 awardid (text) – Award name.
 yearid (integer) – Year.
@@ -370,7 +445,9 @@ votesfirst (integer) – First-place votes.
 
 
 23. awardsshareplayers
-Description: Player award voting shares
+Description: Player award voting shares. Uses the same awardid conventions as
+  awardsplayers (item 21) — see that entry for real values behind common short
+  names like "MVP".
 
 awardid, yearid, lgid, playerid – Identifiers.
 pointswon, pointsmax, votesfirst – Voting tallies.
@@ -421,8 +498,12 @@ Description: Batting Counting stats aligned to Lahman
 
 player_id (integer) – MLBAM player ID.
 year (integer) – Season year.
-last_name, first_name (text) – Player name.
-team (text) – Team abbreviation.
+playername (text) – Player name, stored as "Last, First" (e.g. "McLain, Matt") — NOT "First Last".
+  Do not string-match this column against a name given as "First Last". To look up a specific
+  player on this table, join through lahman_savant_bridge (playerid <-> key_mlbam) starting
+  from the people table (namefirst/namelast), then filter savant_batting_traditional.player_id = key_mlbam.
+  (player_name is a duplicate of playername; name is not populated — use playername.)
+team (text) – Team abbreviation. No 'TOT' rows exist on this table — each player has exactly one row per year.
 b_game (integer) – Games.
 b_ab (integer) – At-bats.
 b_total_pa (integer) – Plate appearances.
@@ -439,7 +520,9 @@ b_strikeout (integer) – Strikeouts.
 29. savant_batting_ratios
 Description: Common Batting ratio stats
 
-player_id, year, last_name, first_name – Identifiers.
+player_id, year, playername – Identifiers. There is NO last_name/first_name
+  column here (unlike some other tables' docs may suggest) — use playername,
+  or join to savant_batting_traditional (item 28) on player_id + year.
 batting_avg (numeric) – Batting average (H/AB).
 on_base_percent (numeric) – On-base percentage.
 slg_percent (numeric) – Slugging percentage.
@@ -451,7 +534,8 @@ bb_k (numeric) – Walk-to-strikeout ratio.
 
 
 30. savant_batting_expected
-Description: Expected and Luck Metrics
+Description: Expected and Luck Metrics. Covers 2015-present (Statcast's full
+  tracking era), not just the current season — no fixed cutover year here.
 
 player_id, year – Identifiers.
 xwoba (numeric) – Expected wOBA.
@@ -466,7 +550,11 @@ hard_hit_percent (numeric) – Hard hit percentage (95+ mph).
 
 
 31. savant_batting_physics
-Description: Batting Power and Speed Metrics
+Description: Batting Power and Speed Metrics. Covers 2015-present (Statcast's
+  full tracking era), not just the current season.
+NOTE: hard_hit_percent and barrel_batted_rate are NOT on this table despite
+  sounding physics-related — they live on savant_batting_expected (item 30).
+  Do not invent them here.
 
 player_id, year – Identifiers.
 exit_velocity_avg (numeric) – Average exit velocity (mph).
@@ -476,7 +564,8 @@ hp_to_first (numeric) – Home to first time (seconds).
 
 
 32. savant_batting_discipline
-Description: Swing Decision and Plate Vision Metrics
+Description: Swing Decision and Plate Vision Metrics. Covers 2015-present
+  (Statcast's full tracking era), not just the current season.
 
 player_id, year – Identifiers.
 zone_swing_percent (numeric) – Swing rate in the zone.
@@ -490,7 +579,13 @@ meatball_percent (numeric) – Percentage of pitches seen down the middle.
 33. savant_pitching_traditional
 Description: Pitching Counting stats align to Lahman
 
-player_id, year, last_name, first_name – Identifiers.
+player_id, year – Identifiers.
+playername (text) – Player name, stored as "Last, First" — see savant_batting_traditional note above
+  for lookup guidance (same convention, no 'TOT' rows on this table either).
+NOTE: this table has NO innings-pitched or outs column (no `ip`, `ipouts`, etc. — do not
+  invent one). For an IP-based pitching qualification threshold on a current-season
+  query, use p_game as the best available proxy, or join savant_pitching_ratios (item 34)
+  if a rate column you need already factors in playing time.
 p_game, p_started, p_win, p_loss, p_save, p_shutout, p_complete_game – Usage/decisions.
 p_strikeout (integer) – Strikeouts.
 p_walk (integer) – Walks.
@@ -503,7 +598,9 @@ p_home_run (integer) – HR allowed.
 34. savant_pitching_ratios
 Description: Common pitching ratio stats
 
-player_id, year, last_name, first_name – Identifiers.
+player_id, year, playername – Identifiers. There is NO last_name/first_name
+  column here — use playername, or join to savant_pitching_traditional
+  (item 33) on player_id + year.
 p_era (numeric) – Earned run average.
 batting_avg (numeric) – Batting average against.
 on_base_percent (numeric) – OBP against.
@@ -512,7 +609,8 @@ bb_k (numeric) – Walk-to-strikeout ratio.
 
 
 35. savant_pitching_expected
-Description: Expected Damage Allowed Metrics
+Description: Expected Damage Allowed Metrics. Covers 2015-present (Statcast's
+  full tracking era), not just the current season.
 
 player_id, year – Identifiers.
 xwoba (numeric) – Expected wOBA allowed.
@@ -525,7 +623,11 @@ hard_hit_percent (numeric) – Hard hit percentage allowed.
 
 
 36. savant_pitching_physics
-Description: Pitching Velocity and Spin Metrics
+Description: Pitching Velocity and Spin Metrics. Covers 2015-present (Statcast's
+  full tracking era), not just the current season.
+NOTE: hard_hit_percent and barrel_batted_rate are NOT on this table despite
+  sounding physics-related — they live on savant_pitching_expected (item 35).
+  Do not invent them here.
 
 player_id, year – Identifiers.
 exit_velocity_avg (numeric) – Exit velocity allowed (mph).
@@ -537,7 +639,8 @@ release_extension (numeric) – Release extension (feet).
 
 
 37. savant_pitching_discipline
-Description: Pitching Control and Dominance Metrics
+Description: Pitching Control and Dominance Metrics. Covers 2015-present
+  (Statcast's full tracking era), not just the current season.
 
 player_id, year – Identifiers.
 chase_percent (numeric) – Chase rate generated.
@@ -550,7 +653,8 @@ putaway_percent (numeric) – Putaway rate with 2 strikes.
 Description: ID map between Lahman and Savant
 
 playerid (text) – Lahman player ID.
-key_mlbam (integer) – MLBAM player ID.
+key_mlbam (integer) – MLBAM player ID. Join this to savant_*.player_id.
+savant_id (integer) – Alternate Savant ID column (redundant with key_mlbam for this purpose).
 
 
 ---
@@ -652,7 +756,8 @@ D.R. – Dominican Republic
 
 Note: All `playerid` columns reference the `people` table. Composite primary keys are used where appropriate, typically across (playerid, yearid, stint) or (yearid, teamid).
 
-39. fangraphs_batting_lahman_like (fbl)
+39. fangraphs_batting_lahman_like (fbl) [LEGACY — DO NOT USE. Use savant_batting_traditional
+    (current season) or batting/people (historical) instead.]
 Description: Advanced FanGraphs batting stats in a Lahman-like structure.
 idfg (integer) – FanGraphs player ID.
 season (integer) – Season year.
@@ -671,7 +776,8 @@ sb (integer) – Stolen bases.
 bb (integer) – Walks.
 so (real) – Strikeouts.
 
-40. fangraphs_pitching_lahman_like (fpl)
+40. fangraphs_pitching_lahman_like (fpl) [LEGACY — DO NOT USE. Use savant_pitching_traditional
+    (current season) or pitching/people (historical) instead.]
 Description: Advanced FanGraphs pitching stats in a Lahman-like structure.
 idfg (integer) – FanGraphs player ID.
 season (integer) – Season year.
@@ -685,29 +791,52 @@ gs (integer) – Games started.
 ip (real) – Innings pitched.
 so (integer) – Strikeouts.
 
-41. fangraphs_batting_standard_ratios (fbr)
+41. fangraphs_batting_standard_ratios (fbr) [LEGACY — DO NOT USE. Compute AVG/OBP/SLG from
+    savant_batting_ratios (current season) or Lahman batting raw counts (historical) instead.]
 Description: Standard FanGraphs batting ratios.
 idfg, season, name, playername, team – Identifiers.
 avg (numeric) – Batting average.
 obp (numeric) – On-base percentage.
 slg (numeric) – Slugging percentage.
 ops (numeric) – OPS.
+iso (numeric) – Isolated power (SLG - AVG).
+babip (numeric) – Batting average on balls in play.
+bb_pc (numeric) – Walk rate.
+k_pc (numeric) – Strikeout rate.
+bb_k (numeric) – Walk-to-strikeout ratio.
+gdp (integer) – Grounded into double plays.
 
-42. fangraphs_pitching_standard_ratios (fpr)
+42. fangraphs_pitching_standard_ratios (fpr) [LEGACY — DO NOT USE. Compute ERA/WHIP from
+    savant_pitching_ratios (current season) or Lahman pitching raw counts (historical) instead.]
 Description: Standard FanGraphs pitching ratios.
 idfg, season, name, playername, team – Identifiers.
 era (numeric) – ERA.
+k_9 (numeric) – Strikeouts per 9 innings.
+bb_9 (numeric) – Walks per 9 innings.
+k_bb (numeric) – Strikeout-to-walk ratio.
+h_9 (numeric) – Hits allowed per 9 innings.
+hr_9 (numeric) – Home runs allowed per 9 innings.
+avg (numeric) – Opponent batting average.
+whip (numeric) – Walks + hits per inning pitched.
+babip (numeric) – Batting average on balls in play against.
+lob_pc (numeric) – Left-on-base percentage.
 
-43. fangraphs_batting_advanced (fba)
+43. fangraphs_batting_advanced (fba) [FROZEN ARCHIVE — the ONLY source for WAR/wOBA/wRC+.
+    No new data will ever be loaded. A row with season = current year may exist and is a
+    stale leftover, not live data — never present it as current-season.]
 Description: Advanced FanGraphs batting metrics.
-idfg, season, name, playername, team – Identifiers.
+idfg, season, name, playername, team – Identifiers. team has its own TOT rows — no
+  join to fbl needed for traded-player handling on this table.
 woba (numeric) – wOBA.
 wrc_plus (numeric) – wRC+.
 war (numeric) – WAR.
 
-44. fangraphs_pitching_advanced (fpa)
+44. fangraphs_pitching_advanced (fpa) [FROZEN ARCHIVE — the ONLY source for WAR/FIP/xFIP.
+    No new data will ever be loaded. A row with season = current year may exist and is a
+    stale leftover, not live data — never present it as current-season.]
 Description: Advanced FanGraphs pitching metrics.
-idfg, season, name, playername, team – Identifiers.
+idfg, season, name, playername, team – Identifiers. team has its own TOT rows — no
+  join to fpl needed for traded-player handling on this table.
 fip (numeric) – FIP.
 xfip (numeric) – xFIP.
 war (numeric) – WAR.
